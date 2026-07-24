@@ -26,3 +26,6 @@ Thumbs.db
 !.env.example
 **/credentials*.json
 **/secrets*.json
+
+# Cursor IDE (local skills/rules — docs live in docs/)
+.cursor/
