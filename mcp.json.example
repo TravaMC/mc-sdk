@@ -1,8 +1,7 @@
 {
   "mcpServers": {
     "mc-sdk": {
-      "command": "node",
-      "args": ["C:\\\\absolute\\\\path\\\\to\\\\mc-sdk\\\\dist\\\\index.js"]
+      "command": "mc-sdk"
     }
   }
 }

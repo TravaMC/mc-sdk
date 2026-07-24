@@ -35,34 +35,20 @@ npm link          # опционально — `mc-sdk` в PATH
 
 ### Конфиг MCP в Cursor
 
-Предпочтительнее абсолютный путь к `node`, чтобы reload не цеплялся за устаревший shim в PATH:
+После `npm link` (или глобальной установки):
 
 ```json
 {
   "mcpServers": {
     "mc-sdk": {
-      "command": "node",
-      "args": ["C:\\\\path\\\\to\\\\mc-sdk\\\\dist\\\\index.js"]
+      "command": "mc-sdk"
     }
   }
 }
 ```
 
-После правок кода: `npm run build`, затем **выключите и включите MCP** (Off→On). Soft reload часто оставляет старый процесс Node.
-
-Проверка: **`mc_cache_stats`** → `sdkPackageVersion` (ожидайте `3.0.0`+). В списке инструментов должен быть `mc_resolve_dependency`.
-
-Держите **одну** запись MCP (не запускайте параллельно ещё и `cmd /c mc-sdk`).
-
-Если каталог инструментов неполный:
-
-```powershell
-Get-CimInstance Win32_Process -Filter "Name='node.exe'" |
-  Where-Object { $_.CommandLine -match 'mc-sdk|minecraft-plugin-sdk' } |
-  ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
-```
-
-После этого снова переключите сервер (или перезапустите Cursor).
+После правок кода: `npm run build`, затем перезапустите MCP (Off→On).  
+Проверка: `mc_cache_stats` → `sdkPackageVersion` (`3.0.0`+).
 
 См. [`mcp.json.example`](mcp.json.example).
 
