@@ -1,41 +1,41 @@
 # mc-sdk
 
-MCP server for **Paper**, **Folia**, **Purpur**, and **Velocity** plugin development: versioned Javadocs, PaperMC docs, Hangar search, templates, and **Mojang-mapped NMS** lookups.
+MCP-сервер для разработки плагинов **Paper**, **Folia**, **Purpur** и **Velocity**: версионированные Javadoc, документация PaperMC, поиск Hangar, шаблоны и lookup **Mojang-mapped NMS**.
 
-Agents should pin a platform/version, then look up APIs instead of inventing members from training data.
+Агенты должны сначала закрепить платформу/версию, затем смотреть API — а не выдумывать члены классов из обучающих данных.
 
 [![CI](https://github.com/TravaMC/mc-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/TravaMC/mc-sdk/actions/workflows/ci.yml)
 
-## Platforms
+## Платформы
 
-| Platform | Javadocs | Pin |
-|----------|----------|-----|
+| Платформа | Javadoc | Пин |
+|-----------|---------|-----|
 | Paper | https://jd.papermc.io/paper/{version}/ | `mc_set_version` `platform=paper` |
 | Folia | https://jd.papermc.io/folia/{version}/ | `mc_set_version` `platform=folia` |
 | Purpur | https://purpurmc.org/javadoc/ | `mc_set_version` `platform=purpur` |
 | Velocity | https://jd.papermc.io/velocity/{version}/ | `mc_set_version` `platform=velocity` |
 
-Project memory: `.mc-sdk.json` (+ Cursor rule `.cursor/rules/mc-sdk.mdc`).  
-Still reads legacy `.minecraft-plugin-sdk.json` and `.paper-mcp.json`.
+Память проекта: `.mc-sdk.json` (+ правило Cursor `.cursor/rules/mc-sdk.mdc`).  
+По-прежнему читаются legacy `.minecraft-plugin-sdk.json` и `.paper-mcp.json`.
 
-## Requirements
+## Требования
 
 - Node.js **18+**
-- Network access to Paper / Purpur / Mojang endpoints (cached under `~/.cache/mc-sdk`)
+- Сеть до эндпоинтов Paper / Purpur / Mojang (кэш в `~/.cache/mc-sdk`)
 
-## Install (local / Cursor)
+## Установка (локально / Cursor)
 
 ```bash
 git clone https://github.com/TravaMC/mc-sdk.git
 cd mc-sdk
 npm install
 npm run build
-npm link          # optional — puts `mc-sdk` on PATH
+npm link          # опционально — `mc-sdk` в PATH
 ```
 
-### Cursor MCP config
+### Конфиг MCP в Cursor
 
-Prefer an absolute `node` path so reloads cannot stick to a stale PATH shim:
+Предпочтительнее абсолютный путь к `node`, чтобы reload не цеплялся за устаревший shim в PATH:
 
 ```json
 {
@@ -48,13 +48,13 @@ Prefer an absolute `node` path so reloads cannot stick to a stale PATH shim:
 }
 ```
 
-After code changes: `npm run build`, then **toggle MCP Off→On**. Soft reload often keeps a stale Node process.
+После правок кода: `npm run build`, затем **выключите и включите MCP** (Off→On). Soft reload часто оставляет старый процесс Node.
 
-Verify with **`mc_cache_stats`** → `sdkPackageVersion` (expect `3.0.0`+). Confirm `mc_resolve_dependency` appears in the tool list.
+Проверка: **`mc_cache_stats`** → `sdkPackageVersion` (ожидайте `3.0.0`+). В списке инструментов должен быть `mc_resolve_dependency`.
 
-Keep **one** MCP entry only (do not also run `cmd /c mc-sdk` in parallel).
+Держите **одну** запись MCP (не запускайте параллельно ещё и `cmd /c mc-sdk`).
 
-If the catalog stays incomplete:
+Если каталог инструментов неполный:
 
 ```powershell
 Get-CimInstance Win32_Process -Filter "Name='node.exe'" |
@@ -62,58 +62,58 @@ Get-CimInstance Win32_Process -Filter "Name='node.exe'" |
   ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
 ```
 
-Then toggle the server again (or restart Cursor).
+После этого снова переключите сервер (или перезапустите Cursor).
 
-See [`mcp.json.example`](mcp.json.example).
+См. [`mcp.json.example`](mcp.json.example).
 
-## Core tools
+## Основные инструменты
 
-| Area | Tools |
-|------|--------|
-| Version | `mc_set_version`, `mc_get_config`, `mc_detect_version`, `mc_list_versions`, `mc_paper_builds`, **`mc_resolve_dependency`** |
+| Область | Инструменты |
+|---------|-------------|
+| Версия | `mc_set_version`, `mc_get_config`, `mc_detect_version`, `mc_list_versions`, `mc_paper_builds`, **`mc_resolve_dependency`** |
 | Paper / Folia API | `mc_search_api`, `mc_get_class`, `mc_lookup_*`, `mc_find_event`, `mc_diff_api` |
 | Velocity | `mc_velocity_list_versions`, `mc_velocity_search_api`, `mc_velocity_get_class`, `mc_velocity_guide` |
-| Docs | `mc_docs_search`, `mc_docs_get`, `mc_adventure_search`, `mc_folia_guide`, **`mc_async_guide`**, `mc_commands_guide`, `mc_purpur_guide` |
+| Документация | `mc_docs_search`, `mc_docs_get`, `mc_adventure_search`, `mc_folia_guide`, **`mc_async_guide`**, `mc_commands_guide`, `mc_purpur_guide` |
 | **API vs NMS** | **`mc_api_vs_nms`**, `mc_build_guidance`, `mc_nms_guidance`, `mc_remapper_guidance` |
-| Project | **`mc_scaffold_project`**, **`mc_validate_build_gradle`**, `mc_validate_plugin_yml`, `mc_template`, `mc_hangar_search`, `mc_cache_stats`, `mc_cache_clear` |
+| Проект | **`mc_scaffold_project`**, **`mc_validate_build_gradle`**, `mc_validate_plugin_yml`, `mc_template`, `mc_hangar_search`, `mc_cache_stats`, `mc_cache_clear` |
 | NMS lookup | `mc_nms_search`, `mc_nms_class` |
 
-**26.x tip:** do not invent `1.26.2-R0.1-SNAPSHOT` — call `mc_resolve_dependency`. Alias `1.26.2` → `26.2` is automatic with a warning. NMS on 26.1+: `nms: true`, `MOJANG_PRODUCTION`, no `reobfJar`.
+**Совет для 26.x:** не выдумывайте `1.26.2-R0.1-SNAPSHOT` — вызывайте `mc_resolve_dependency`. Алиас `1.26.2` → `26.2` срабатывает автоматически с предупреждением. NMS на 26.1+: `nms: true`, `MOJANG_PRODUCTION`, без `reobfJar`.
 
-## Guidance docs
+## Руководства
 
-- [docs/async.md](docs/async.md) — main thread vs async  
+- [docs/async.md](docs/async.md) — главный поток vs async  
 - [docs/commands.md](docs/commands.md) — classic vs Brigadier  
-- [docs/purpur.md](docs/purpur.md) — Purpur-only APIs  
+- [docs/purpur.md](docs/purpur.md) — API только Purpur  
 - [docs/folia.md](docs/folia.md) — region schedulers  
-- [docs/api-vs-nms.md](docs/api-vs-nms.md) — when NMS is justified  
-- [docs/build-guidance.md](docs/build-guidance.md) — toolchain / Windows paths  
-- [docs/nms.md](docs/nms.md) — paperweight workflow  
-- [docs/velocity.md](docs/velocity.md) — proxy plugins  
+- [docs/api-vs-nms.md](docs/api-vs-nms.md) — когда оправдан NMS  
+- [docs/build-guidance.md](docs/build-guidance.md) — toolchain / пути Windows  
+- [docs/nms.md](docs/nms.md) — workflow paperweight  
+- [docs/velocity.md](docs/velocity.md) — proxy-плагины  
 
-**Default:** Paper API (+ Adventure). Never block the tick thread with HTTP/DB/disk (`mc_async_guide`).
+**По умолчанию:** Paper API (+ Adventure). Не блокируйте tick-поток HTTP/БД/диском (`mc_async_guide`).
 
-## Typical workflows
+## Типовые сценарии
 
-**Paper API:** pin → `mc_resolve_dependency` / `mc_scaffold_project` → `mc_search_api`  
+**Paper API:** пин → `mc_resolve_dependency` / `mc_scaffold_project` → `mc_search_api`  
 
-**Purpur:** pin `platform=purpur` → `mc_resolve_dependency` → `mc_purpur_guide`  
+**Purpur:** пин `platform=purpur` → `mc_resolve_dependency` → `mc_purpur_guide`  
 
-**NMS:** `mc_api_vs_nms` → `mc_resolve_dependency` `nms: true` → verify members in `paperDevBundle` / `compileJava`  
+**NMS:** `mc_api_vs_nms` → `mc_resolve_dependency` `nms: true` → проверка членов в `paperDevBundle` / `compileJava`  
 
 **Async:** `mc_async_guide` → `mc_template` (`async_io` / `async_cpu` / `async_secure`)
 
-## Cache
+## Кэш
 
-HTTP/Javadoc responses live under `~/.cache/mc-sdk` (not in your plugin project). Auto TTL / ETag revalidation; optional `mc_cache_stats` / `mc_cache_clear`.
+Ответы HTTP/Javadoc лежат в `~/.cache/mc-sdk` (не в проекте плагина). Авто TTL / ETag; при необходимости `mc_cache_stats` / `mc_cache_clear`.
 
-Mojang mappings are for local development only — do not redistribute dumps.
+Mappings Mojang — только для локальной разработки, дампы не распространяйте.
 
-## Examples
+## Примеры
 
-Optional demos under [`examples/`](examples/) (not in the npm tarball). See [examples/README.md](examples/README.md).
+Опциональные демо в [`examples/`](examples/) (не входят в npm-пакет). См. [examples/README.md](examples/README.md).
 
-## Develop
+## Разработка
 
 ```bash
 npm install
@@ -124,18 +124,18 @@ npm run smoke
 npm pack --dry-run
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md).
+См. [CONTRIBUTING.md](CONTRIBUTING.md).
 
-## Publish checklist (maintainers)
+## Публикация (maintainers)
 
 1. `npm run build && npm test && npm run smoke`  
-2. Tag `v3.0.0` (or current version) and push.  
-3. Optional: `npm publish` (package name `mc-sdk`).
+2. Тег `v3.0.0` (или текущая версия) и push.  
+3. Опционально: `npm publish` (имя пакета `mc-sdk`).
 
-## License
+## Лицензия
 
-MIT — see [LICENSE](LICENSE). Mojang/Minecraft assets and mappings remain under their respective terms.
+MIT — см. [LICENSE](LICENSE). Ассеты и mappings Mojang/Minecraft остаются под их условиями.
 
-## Rename note (3.0.0)
+## Переименование (3.0.0)
 
-Formerly **minecraft-plugin-sdk**. Config: write `.mc-sdk.json`; still reads `.minecraft-plugin-sdk.json`. Cache dir: `~/.cache/mc-sdk`. CLI / MCP id: `mc-sdk`.
+Раньше — **minecraft-plugin-sdk**. Конфиг: пишется `.mc-sdk.json`; читаются и `.minecraft-plugin-sdk.json`. Кэш: `~/.cache/mc-sdk`. CLI / MCP id: `mc-sdk`.
