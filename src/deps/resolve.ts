@@ -73,9 +73,12 @@ function pickBestArtifactVersion(
   const prefix = `${gameVersion}.build.`;
   const matching = versions.filter((v) => v.startsWith(prefix) || v.startsWith(`${gameVersion}-`));
   if (!matching.length) {
-    // legacy 1.21.1-R0.1-SNAPSHOT
-    const legacy = versions.filter((v) => v.startsWith(`${gameVersion}-`));
-    return { exact: legacy.at(-1), channel: legacy.at(-1)?.includes("SNAPSHOT") ? "snapshot" : undefined };
+    // Classic Paper Maven coords: 1.21.1-R0.1-SNAPSHOT
+    const classic = versions.filter((v) => v.startsWith(`${gameVersion}-`));
+    return {
+      exact: classic.at(-1),
+      channel: classic.at(-1)?.includes("SNAPSHOT") ? "snapshot" : undefined,
+    };
   }
 
   const stable = matching.filter((v) => /-stable$/i.test(v));

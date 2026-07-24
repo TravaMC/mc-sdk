@@ -1,5 +1,5 @@
 import { loadSearchIndexes, type MemberHit } from "./search.js";
-import { javadocBaseUrl } from "../config.js";
+import { javadocBaseUrlFor } from "../platform.js";
 
 export type BuiltinEnumKind =
   | "material"
@@ -65,7 +65,7 @@ function memberUrl(
   name: string,
   urlPath?: string
 ): string {
-  const base = javadocBaseUrl(version);
+  const base = javadocBaseUrlFor("paper", version);
   const pkgPath = pkg.replaceAll(".", "/") + "/";
   return `${base}${pkgPath}${className}.html#${urlPath ?? name}`;
 }

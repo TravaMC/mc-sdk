@@ -8,16 +8,14 @@ import {
 import { normalizeGameVersion } from "./versioning.js";
 
 export const CONFIG_FILENAME = ".mc-sdk.json";
-/** Previous package name — still loaded for upgrades. */
-export const LEGACY_SDK_CONFIG_FILENAME = ".minecraft-plugin-sdk.json";
-export const LEGACY_CONFIG_FILENAME = ".paper-mcp.json";
 export const CURSOR_RULE_PATH = path.join(".cursor", "rules", "mc-sdk.mdc");
 
 export interface ProjectConfig {
-  /** Target platform: paper (default), velocity, folia, or purpur */
+  /** Target platform (default paper) */
   platform?: Platform;
+  /** Pinned game/proxy version for the platform */
   paperVersion: string;
-  /** Alias used when platform=velocity; kept for backward compat as paperVersion too */
+  /** Set when platform=velocity (mirrors paperVersion) */
   velocityVersion?: string;
   /** Minecraft version for NMS/mappings when it differs */
   minecraftVersion?: string;
@@ -27,11 +25,6 @@ export interface ProjectConfig {
   nms?: boolean;
   notes?: string;
   updatedAt: string;
-}
-
-/** @deprecated use javadocBaseUrlFor("paper", version) */
-export function javadocBaseUrl(version: string): string {
-  return javadocBaseUrlFor("paper", version);
 }
 
 export function adventureJavadocBaseUrl(): string {
@@ -45,21 +38,14 @@ export function configPath(projectRoot: string): string {
 export async function loadProjectConfig(
   projectRoot: string
 ): Promise<ProjectConfig | null> {
-  for (const name of [
-    CONFIG_FILENAME,
-    LEGACY_SDK_CONFIG_FILENAME,
-    LEGACY_CONFIG_FILENAME,
-  ]) {
-    try {
-      const raw = await readFile(path.join(projectRoot, name), "utf8");
-      const cfg = JSON.parse(raw) as ProjectConfig;
-      if (!cfg.platform) cfg.platform = "paper";
-      return cfg;
-    } catch {
-      /* try next */
-    }
+  try {
+    const raw = await readFile(configPath(projectRoot), "utf8");
+    const cfg = JSON.parse(raw) as ProjectConfig;
+    if (!cfg.platform) cfg.platform = "paper";
+    return cfg;
+  } catch {
+    return null;
   }
-  return null;
 }
 
 export async function saveProjectConfig(
@@ -109,12 +95,19 @@ export function guessMinecraftVersion(paperVersion: string): string {
   return paperVersion.split("-")[0];
 }
 
+function pinnedVersion(config: ProjectConfig): string {
+  const platform = config.platform ?? "paper";
+  return platform === "velocity"
+    ? config.velocityVersion ?? config.paperVersion
+    : config.paperVersion;
+}
+
 function cursorRuleContent(config: ProjectConfig): string {
   const platform = config.platform ?? "paper";
-  const version =
-    platform === "velocity"
-      ? config.velocityVersion ?? config.paperVersion
-      : config.paperVersion;
+  const version = pinnedVersion(config);
+  const footer = `Javadocs: ${config.javadocBaseUrl}
+Config: \`${CONFIG_FILENAME}\`
+`;
 
   if (platform === "velocity") {
     return `---
@@ -135,9 +128,7 @@ Targets **Velocity ${version}**.
 4. Docs: \`mc_docs_search\` (velocity tags) / \`mc_docs_get\`.
 5. Do not invent ProxyServer / event API from memory — look up **${version}**.
 
-Javadocs: ${config.javadocBaseUrl}
-Config: \`${CONFIG_FILENAME}\`
-`;
+${footer}`;
   }
 
   if (platform === "folia") {
@@ -160,9 +151,7 @@ Targets **Folia ${version}** (Minecraft **${config.minecraftVersion ?? version}*
 5. Docs: \`mc_docs_search\` (folia tags) / \`mc_docs_get\`.
 6. Do not invent Folia/region APIs from memory — look up **${version}**.
 
-Javadocs: ${config.javadocBaseUrl}
-Config: \`${CONFIG_FILENAME}\`
-`;
+${footer}`;
   }
 
   if (platform === "purpur") {
@@ -185,9 +174,7 @@ Targets **Purpur ${version}** (Minecraft **${config.minecraftVersion ?? version}
 5. Threading: \`mc_async_guide\` (same main-thread rules as Paper).
 6. Do not invent Purpur APIs from memory — look up at ${config.javadocBaseUrl}
 
-Javadocs: ${config.javadocBaseUrl}
-Config: \`${CONFIG_FILENAME}\`
-`;
+${footer}`;
   }
 
   return `---
@@ -222,9 +209,7 @@ ${
 `
     : ""
 }
-Javadocs: ${config.javadocBaseUrl}
-Config: \`${CONFIG_FILENAME}\`
-`;
+${footer}`;
 }
 
 async function writeCursorRule(
@@ -260,10 +245,7 @@ export async function resolveVersion(
     const config = await loadProjectConfig(projectRoot);
     if (config) {
       const p = platform ?? config.platform ?? "paper";
-      const version =
-        p === "velocity"
-          ? config.velocityVersion ?? config.paperVersion
-          : config.paperVersion; // paper + folia both store in paperVersion
+      const version = pinnedVersion({ ...config, platform: p });
       if (version) {
         return { version, platform: p, source: "project", config };
       }

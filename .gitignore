@@ -10,8 +10,6 @@ coverage/
 examples/**/build/
 examples/**/.gradle/
 examples/**/.mc-sdk.json
-examples/**/.minecraft-plugin-sdk.json
-examples/**/.paper-mcp.json
 examples/**/.cursor/
 _mcp_test_project/
 

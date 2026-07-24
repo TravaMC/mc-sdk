@@ -273,7 +273,7 @@ export function createServer(): McpServer {
 
   server.tool(
     "mc_get_config",
-    "Read pinned project config (.mc-sdk.json; also legacy .minecraft-plugin-sdk.json / .paper-mcp.json).",
+    "Read pinned project config (.mc-sdk.json).",
     { projectRoot: z.string() },
     async ({ projectRoot }) => {
       const config = await loadProjectConfig(projectRoot);

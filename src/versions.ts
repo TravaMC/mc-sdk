@@ -1,5 +1,5 @@
 import { fetchText } from "./cache.js";
-import { javadocBaseUrl } from "./config.js";
+import { javadocBaseUrlFor } from "./platform.js";
 import {
   defaultMinJava,
   normalizeGameVersion,
@@ -49,10 +49,13 @@ export async function getPaperBuilds(version: string): Promise<unknown> {
 
 export async function versionHasJavadoc(version: string): Promise<boolean> {
   try {
-    const res = await fetch(`${javadocBaseUrl(version)}type-search-index.js`, {
-      method: "HEAD",
-      headers: { "User-Agent": "mc-sdk/3.0" },
-    });
+    const res = await fetch(
+      `${javadocBaseUrlFor("paper", version)}type-search-index.js`,
+      {
+        method: "HEAD",
+        headers: { "User-Agent": "mc-sdk/3.0" },
+      }
+    );
     return res.ok;
   } catch {
     return false;

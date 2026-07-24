@@ -15,8 +15,7 @@ MCP-сервер для разработки плагинов **Paper**, **Folia
 | Purpur | https://purpurmc.org/javadoc/ | `mc_set_version` `platform=purpur` |
 | Velocity | https://jd.papermc.io/velocity/{version}/ | `mc_set_version` `platform=velocity` |
 
-Память проекта: `.mc-sdk.json` (+ правило Cursor `.cursor/rules/mc-sdk.mdc`).  
-По-прежнему читаются legacy `.minecraft-plugin-sdk.json` и `.paper-mcp.json`.
+Память проекта: `.mc-sdk.json` (+ правило Cursor `.cursor/rules/mc-sdk.mdc`).
 
 ## Требования
 
@@ -121,7 +120,3 @@ npm pack --dry-run
 ## Лицензия
 
 MIT — см. [LICENSE](LICENSE). Ассеты и mappings Mojang/Minecraft остаются под их условиями.
-
-## Переименование (3.0.0)
-
-Раньше — **minecraft-plugin-sdk**. Конфиг: пишется `.mc-sdk.json`; читаются и `.minecraft-plugin-sdk.json`. Кэш: `~/.cache/mc-sdk`. CLI / MCP id: `mc-sdk`.

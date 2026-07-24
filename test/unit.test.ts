@@ -81,24 +81,6 @@ describe("config", () => {
     const { CONFIG_FILENAME } = await import("../src/config.js");
     assert.equal(CONFIG_FILENAME, ".mc-sdk.json");
   });
-
-  it("still loads legacy .minecraft-plugin-sdk.json", async () => {
-    const root = await mkdtemp(path.join(tmpdir(), "mpsdk-legacy-"));
-    after(async () => {
-      await rm(root, { recursive: true, force: true });
-    });
-    await writeFile(
-      path.join(root, ".minecraft-plugin-sdk.json"),
-      JSON.stringify({
-        platform: "paper",
-        paperVersion: "1.21.1",
-        javadocBaseUrl: "https://jd.papermc.io/paper/1.21.1/",
-        updatedAt: new Date().toISOString(),
-      }) + "\n"
-    );
-    const loaded = await loadProjectConfig(root);
-    assert.equal(loaded?.paperVersion, "1.21.1");
-  });
 });
 
 describe("detect", () => {
