@@ -4,7 +4,7 @@ MCP server for **Paper**, **Folia**, **Purpur**, and **Velocity** plugin develop
 
 Agents should pin a platform/version, then look up APIs instead of inventing members from training data.
 
-[![CI](https://github.com/TsuckermanDev/mc-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/TsuckermanDev/mc-sdk/actions/workflows/ci.yml)
+[![CI](https://github.com/TravaMC/mc-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/TravaMC/mc-sdk/actions/workflows/ci.yml)
 
 ## Platforms
 
@@ -26,7 +26,7 @@ Still reads legacy `.minecraft-plugin-sdk.json` and `.paper-mcp.json`.
 ## Install (local / Cursor)
 
 ```bash
-git clone https://github.com/TsuckermanDev/mc-sdk.git
+git clone https://github.com/TravaMC/mc-sdk.git
 cd mc-sdk
 npm install
 npm run build

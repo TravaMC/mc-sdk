@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import {
@@ -103,10 +104,14 @@ async function requireVersion(
 
 const platformEnum = z.enum(["paper", "velocity", "folia", "purpur"]);
 
+const PKG = JSON.parse(
+  readFileSync(new URL("../package.json", import.meta.url), "utf8")
+) as { name: string; version: string };
+
 export function createServer(): McpServer {
   const server = new McpServer({
-    name: "mc-sdk",
-    version: "3.0.0",
+    name: PKG.name,
+    version: PKG.version,
   });
 
   // —— Version / project memory ——
@@ -777,14 +782,14 @@ export function createServer(): McpServer {
         ...stats,
         bytesHuman: `${(stats.bytes / (1024 * 1024)).toFixed(2)} MiB`,
         autoPruned: pruned,
-        sdkPackageVersion: "3.0.0",
-        serverName: "mc-sdk",
+        sdkPackageVersion: PKG.version,
+        serverName: PKG.name,
         toolsHighlight: [
           "mc_resolve_dependency",
           "mc_scaffold_project",
           "mc_validate_build_gradle",
         ],
-        note: "If sdkPackageVersion < 3.0.0 or toolsHighlight tools are missing from GetMcpTools, kill duplicate node MCP processes and toggle the server Off→On (full Cursor restart if needed).",
+        note: "If sdkPackageVersion is stale or toolsHighlight tools are missing from GetMcpTools, kill duplicate node MCP processes and toggle the server Off→On (full Cursor restart if needed).",
       });
     }
   );

@@ -37,5 +37,4 @@ Edit the Markdown first, then smoke-test the matching tool.
 ## Pull requests
 
 1. Focused change + tests when behavior changes.  
-2. Update `CHANGELOG.md` under an Unreleased / version heading.  
-3. Ensure CI is green (`build`, `test`, `check:docs`, `smoke`).
+2. Ensure CI is green (`build`, `test`, `check:docs`, `smoke`).

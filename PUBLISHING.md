@@ -1,22 +1,16 @@
 # Publishing mc-sdk to GitHub
 
-Target: https://github.com/TsuckermanDev/mc-sdk
+Repo: https://github.com/TravaMC/mc-sdk
 
-## 1. Create the empty GitHub repo
-
-On GitHub: **New repository** → name `mc-sdk` → **Public** → **do not** add README/LICENSE/gitignore (this tree already has them).
-
-(API create failed with the current GitHub token: missing `repo` / `public_repo` scope — create in the UI or re-auth with those scopes.)
-
-## 2. Push this tree
+## Push
 
 ```powershell
 cd "C:\Users\Максим\Desktop\PaperPlugin MCP"
-git remote add origin https://github.com/TsuckermanDev/mc-sdk.git
+git remote set-url origin https://github.com/TravaMC/mc-sdk.git
 git push -u origin main
 ```
 
-## 3. Optional release / npm
+## Optional release / npm
 
 ```powershell
 npm run build; npm test; npm run smoke

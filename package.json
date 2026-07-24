@@ -14,7 +14,6 @@
     "docs",
     "README.md",
     "LICENSE",
-    "CHANGELOG.md",
     "mcp.json.example"
   ],
   "scripts": {
@@ -43,12 +42,12 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/TsuckermanDev/mc-sdk.git"
+    "url": "git+https://github.com/TravaMC/mc-sdk.git"
   },
   "bugs": {
-    "url": "https://github.com/TsuckermanDev/mc-sdk/issues"
+    "url": "https://github.com/TravaMC/mc-sdk/issues"
   },
-  "homepage": "https://github.com/TsuckermanDev/mc-sdk#readme",
+  "homepage": "https://github.com/TravaMC/mc-sdk#readme",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.1",
     "cheerio": "^1.0.0",
