@@ -1,0 +1,63 @@
+{
+  "name": "mc-sdk",
+  "version": "3.0.0",
+  "description": "MCP server for Paper, Folia, Purpur, and Velocity plugin development — versioned Javadocs, docs, NMS mappings, Hangar, templates",
+  "license": "MIT",
+  "author": "mc-sdk contributors",
+  "type": "module",
+  "bin": {
+    "mc-sdk": "./dist/index.js"
+  },
+  "main": "./dist/index.js",
+  "files": [
+    "dist",
+    "docs",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md",
+    "mcp.json.example"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts",
+    "test": "tsx --test test/**/*.test.ts",
+    "check:docs": "tsx scripts/check-docs-links.ts",
+    "smoke": "tsx scripts/smoke.ts",
+    "prepack": "npm run build"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "mcp",
+    "minecraft",
+    "paper",
+    "folia",
+    "purpur",
+    "velocity",
+    "javadoc",
+    "nms",
+    "paperweight",
+    "cursor"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/TsuckermanDev/mc-sdk.git"
+  },
+  "bugs": {
+    "url": "https://github.com/TsuckermanDev/mc-sdk/issues"
+  },
+  "homepage": "https://github.com/TsuckermanDev/mc-sdk#readme",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1",
+    "cheerio": "^1.0.0",
+    "yaml": "^2.7.0",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.10",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.2"
+  }
+}

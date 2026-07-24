@@ -1,0 +1,19 @@
+name: SampleStickNms
+version: '${version}'
+main: dev.example.samplesticknms.SampleStickNmsPlugin
+api-version: '1.21'
+description: NMS demo — visual-only lightning stick (paperweight / Mojang mappings)
+authors: [Example]
+commands:
+  sticknms:
+    description: Give the NMS lightning stick
+    usage: /sticknms give
+    permission: sticknms.give
+    aliases: [snms]
+permissions:
+  sticknms.give:
+    description: Give the NMS stick
+    default: op
+  sticknms.use:
+    description: Use the NMS stick
+    default: true

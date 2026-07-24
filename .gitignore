@@ -1,0 +1,30 @@
+node_modules/
+dist/
+*.log
+.DS_Store
+.cache/
+coverage/
+*.tgz
+
+# Local caches / build outputs
+examples/**/build/
+examples/**/.gradle/
+examples/**/.mc-sdk.json
+examples/**/.minecraft-plugin-sdk.json
+examples/**/.paper-mcp.json
+examples/**/.cursor/
+_mcp_test_project/
+
+# OS / IDE
+Thumbs.db
+.idea/
+*.iml
+.vscode/*
+!.vscode/extensions.json
+
+# Env / secrets (never commit)
+.env
+.env.*
+!.env.example
+**/credentials*.json
+**/secrets*.json

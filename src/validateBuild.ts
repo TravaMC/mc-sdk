@@ -1,0 +1,210 @@
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+import {
+  defaultMinJava,
+  isModernPaperLine,
+  normalizeGameVersion,
+  pluginApiVersion,
+  requiresMojangProduction,
+} from "./versioning.js";
+
+export interface BuildGradleIssue {
+  severity: "error" | "warning";
+  message: string;
+}
+
+function usesUserdev2(buildText: string): boolean {
+  return (
+    /paperweight\.userdev[^"]*"2\./.test(buildText) ||
+    /userdev"\)\s*version\s*"2\./.test(buildText) ||
+    /id\(\s*["']io\.papermc\.paperweight\.userdev["']\s*\)\s*version\s*\(\s*["']2\./.test(
+      buildText
+    )
+  );
+}
+
+/** Parse distributionUrl …/gradle-9.6.1-bin.zip (also escaped \:). */
+export function parseGradleWrapperVersion(
+  wrapperProps: string
+): { major: number; minor: number; patch: number; raw: string } | null {
+  const m = wrapperProps.match(/gradle-(\d+)\.(\d+)(?:\.(\d+))?/);
+  if (!m) return null;
+  return {
+    major: Number.parseInt(m[1], 10),
+    minor: Number.parseInt(m[2], 10),
+    patch: Number.parseInt(m[3] ?? "0", 10),
+    raw: m[3] ? `${m[1]}.${m[2]}.${m[3]}` : `${m[1]}.${m[2]}`,
+  };
+}
+
+export async function validateBuildGradle(
+  projectRoot: string,
+  options?: { expectedVersion?: string; platform?: string }
+): Promise<{ ok: boolean; issues: BuildGradleIssue[]; filesChecked: string[] }> {
+  const issues: BuildGradleIssue[] = [];
+  const filesChecked: string[] = [];
+  let buildText = "";
+  let buildFile = "";
+  for (const name of ["build.gradle.kts", "build.gradle"]) {
+    try {
+      buildText = await readFile(path.join(projectRoot, name), "utf8");
+      buildFile = name;
+      break;
+    } catch {
+      /* next */
+    }
+  }
+  if (!buildFile) {
+    return {
+      ok: false,
+      issues: [{ severity: "error", message: "No build.gradle(.kts) found" }],
+      filesChecked,
+    };
+  }
+  filesChecked.push(buildFile);
+
+  const expected = options?.expectedVersion
+    ? normalizeGameVersion(options.expectedVersion).version
+    : undefined;
+  const modern = expected
+    ? isModernPaperLine(expected)
+    : /26\.\d|paper-api:26|purpur-api:26|paperDevBundle\("26/.test(buildText);
+  const mojangProd = expected
+    ? requiresMojangProduction(expected)
+    : /paperDevBundle\("26\.[1-9]/.test(buildText) ||
+      /MOJANG_PRODUCTION/.test(buildText) ||
+      (modern && /paperweight/.test(buildText));
+
+  if (modern) {
+    if (
+      /-R0\.1-SNAPSHOT/.test(buildText) &&
+      (/paper-api|purpur-api/.test(buildText) ||
+        /paperDevBundle\("[^"]*-R0\.1-SNAPSHOT"\)/.test(buildText))
+    ) {
+      issues.push({
+        severity: "error",
+        message:
+          "Modern Paper/Purpur 26.x should use VERSION.build.+ (or exact .build.N-stable/beta), not -R0.1-SNAPSHOT",
+      });
+    }
+    if (/JavaLanguageVersion\.of\(21\)/.test(buildText)) {
+      issues.push({
+        severity: "warning",
+        message: `26.x line typically needs Java ${defaultMinJava(expected ?? "26.2")} toolchain, not 21`,
+      });
+    }
+  }
+
+  // paperweight / reobf rules for 26.1+
+  if (/paperweight|paperDevBundle/.test(buildText)) {
+    if (mojangProd && /dependsOn\s*\(\s*(tasks\.)?reobfJar\s*\)/.test(buildText)) {
+      issues.push({
+        severity: "error",
+        message:
+          "26.1+: do not dependsOn(reobfJar) — use paperweight.reobfArtifactConfiguration = MOJANG_PRODUCTION (see mc_docs_get /paper/dev/userdev/)",
+      });
+    }
+    if (mojangProd && !/MOJANG_PRODUCTION/.test(buildText)) {
+      issues.push({
+        severity: "warning",
+        message:
+          "26.1+ NMS builds should set ReobfArtifactConfiguration.MOJANG_PRODUCTION",
+      });
+    }
+  }
+
+  const userdev2 = usesUserdev2(buildText);
+
+  let settingsText = "";
+  try {
+    settingsText = await readFile(path.join(projectRoot, "settings.gradle.kts"), "utf8");
+    filesChecked.push("settings.gradle.kts");
+  } catch {
+    try {
+      settingsText = await readFile(path.join(projectRoot, "settings.gradle"), "utf8");
+      filesChecked.push("settings.gradle");
+    } catch {
+      /* optional */
+    }
+  }
+  if (modern && !/foojay-resolver/.test(buildText + settingsText)) {
+    issues.push({
+      severity: "warning",
+      message:
+        "Add org.gradle.toolchains.foojay-resolver-convention in settings.gradle.kts so toolchain can download JDK 25 while Gradle runs on 21",
+    });
+  }
+
+  // Wrapper Gradle version — only warn/error when actually < 9 (or missing)
+  let wrapperVersion: ReturnType<typeof parseGradleWrapperVersion> = null;
+  try {
+    const wrapper = await readFile(
+      path.join(projectRoot, "gradle", "wrapper", "gradle-wrapper.properties"),
+      "utf8"
+    );
+    filesChecked.push("gradle/wrapper/gradle-wrapper.properties");
+    wrapperVersion = parseGradleWrapperVersion(wrapper);
+  } catch {
+    /* missing */
+  }
+
+  if (userdev2) {
+    if (!wrapperVersion) {
+      issues.push({
+        severity: "warning",
+        message:
+          "paperweight-userdev 2.x needs Gradle 9+ — no gradle-wrapper.properties found (or unparseable distributionUrl)",
+      });
+    } else if (wrapperVersion.major < 9) {
+      issues.push({
+        severity: "error",
+        message: `gradle-wrapper is ${wrapperVersion.raw} but paperweight-userdev 2.x requires Gradle 9+`,
+      });
+    }
+  }
+
+  if (/1\.26\.\d/.test(buildText)) {
+    issues.push({
+      severity: "error",
+      message: 'Found "1.26.x" — Paper calendar versions are "26.x", not "1.26.x"',
+    });
+  }
+
+  if (
+    options?.platform === "purpur" &&
+    !/purpur-api/.test(buildText) &&
+    /paper-api/.test(buildText)
+  ) {
+    issues.push({
+      severity: "warning",
+      message:
+        "Platform is purpur but build uses paper-api only — OK for portable plugins; Purpur-only APIs need purpur-api",
+    });
+  }
+
+  try {
+    const yml = await readFile(
+      path.join(projectRoot, "src", "main", "resources", "plugin.yml"),
+      "utf8"
+    );
+    filesChecked.push("src/main/resources/plugin.yml");
+    const api = yml.match(/api-version:\s*['"]?([0-9.]+)/)?.[1];
+    if (expected && api) {
+      const want = pluginApiVersion(expected);
+      if (api !== want && !(want === "1.21" && api.startsWith("1.21"))) {
+        issues.push({
+          severity: "warning",
+          message: `plugin.yml api-version is '${api}', expected ~'${want}' for ${expected}`,
+        });
+      }
+    }
+  } catch {
+    issues.push({
+      severity: "warning",
+      message: "plugin.yml not found under src/main/resources/",
+    });
+  }
+
+  const ok = !issues.some((i) => i.severity === "error");
+  return { ok, issues, filesChecked };
+}

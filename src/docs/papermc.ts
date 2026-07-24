@@ -1,0 +1,103 @@
+import { fetchText } from "../cache.js";
+import * as cheerio from "cheerio";
+
+const DOCS_BASE = "https://docs.papermc.io";
+
+/** Curated index — paths verified against docs.papermc.io (keep in sync / CI can recheck). */
+export const DOCS_CATALOG: Array<{
+  title: string;
+  path: string;
+  tags: string[];
+}> = [
+  { title: "Project setup", path: "/paper/dev/project-setup/", tags: ["setup", "gradle", "start", "paper", "nms", "paperweight", "userdev"] },
+  { title: "plugin.yml", path: "/paper/dev/plugin-yml/", tags: ["plugin.yml", "bukkit", "manifest"] },
+  { title: "Paper plugins", path: "/paper/dev/getting-started/paper-plugins/", tags: ["paper-plugin.yml", "modern"] },
+  { title: "Plugin configuration", path: "/paper/dev/plugin-configurations/", tags: ["config", "yaml"] },
+  { title: "Event listeners", path: "/paper/dev/event-listeners/", tags: ["events", "listener"] },
+  { title: "Paper API index", path: "/paper/dev/api/", tags: ["api", "paper", "commands", "reference"] },
+  { title: "Command API", path: "/paper/dev/api/command-api/", tags: ["commands", "brigadier", "command"] },
+  { title: "Adventure / Component API", path: "/paper/dev/api/component-api/", tags: ["adventure", "component", "chat"] },
+  { title: "Adventure docs", path: "/adventure/", tags: ["adventure", "minimessage"] },
+  { title: "Folia support", path: "/paper/dev/folia-support/", tags: ["folia", "region", "scheduler"] },
+  { title: "Folia home", path: "/folia/", tags: ["folia"] },
+  { title: "Folia FAQ", path: "/folia/faq/", tags: ["folia", "faq"] },
+  { title: "Lifecycle events", path: "/paper/dev/lifecycle/", tags: ["lifecycle", "bootstrap"] },
+  { title: "Data component API", path: "/paper/dev/data-component-api/", tags: ["items", "components", "1.20.5"] },
+  { title: "PDC", path: "/paper/dev/pdc/", tags: ["pdc", "persistent", "data", "items"] },
+  { title: "Registries", path: "/paper/dev/registries/", tags: ["registry", "itemtype", "blocktype"] },
+  { title: "Scheduling", path: "/paper/dev/scheduler/", tags: ["scheduler", "tasks", "folia", "async", "performance", "main-thread"] },
+  { title: "Entity teleport", path: "/paper/dev/entity-teleport/", tags: ["teleport", "async", "chunks", "performance"] },
+  // Velocity
+  { title: "Velocity docs home", path: "/velocity/", tags: ["velocity", "proxy"] },
+  { title: "Velocity getting started", path: "/velocity/getting-started/", tags: ["velocity", "setup", "admin"] },
+  { title: "Creating a Velocity plugin", path: "/velocity/dev/creating-your-first-plugin/", tags: ["velocity", "plugin", "dev", "setup"] },
+  { title: "Velocity API basics", path: "/velocity/dev/api/", tags: ["velocity", "api", "proxy"] },
+  { title: "Velocity events", path: "/velocity/dev/event-api/", tags: ["velocity", "events"] },
+  { title: "Velocity FAQ", path: "/velocity/faq/", tags: ["velocity", "faq"] },
+];
+
+// Purpur docs live on purpurmc.org (not docs.papermc.io) — see DOCS_CATALOG_EXTERNAL
+export const DOCS_CATALOG_EXTERNAL: Array<{
+  title: string;
+  url: string;
+  tags: string[];
+}> = [
+  {
+    title: "Purpur docs home",
+    url: "https://purpurmc.org/docs/purpur/",
+    tags: ["purpur", "api", "setup"],
+  },
+  {
+    title: "Purpur Javadocs",
+    url: "https://purpurmc.org/javadoc/",
+    tags: ["purpur", "javadoc", "api", "afk", "ridable"],
+  },
+];
+
+export function searchDocsCatalog(query: string, limit = 10) {
+  const q = query.toLowerCase();
+  const parts = q.split(/\s+/).filter(Boolean);
+  const paperHits = DOCS_CATALOG.map((page) => {
+    const hay = `${page.title} ${page.tags.join(" ")} ${page.path}`.toLowerCase();
+    let score = 0;
+    if (hay.includes(q)) score += 50;
+    for (const p of parts) if (hay.includes(p)) score += 10;
+    return { title: page.title, path: page.path, tags: page.tags, url: `${DOCS_BASE}${page.path}`, score };
+  });
+  const externalHits = DOCS_CATALOG_EXTERNAL.map((page) => {
+    const hay = `${page.title} ${page.tags.join(" ")} ${page.url}`.toLowerCase();
+    let score = 0;
+    if (hay.includes(q)) score += 50;
+    for (const p of parts) if (hay.includes(p)) score += 10;
+    return { title: page.title, path: page.url, tags: page.tags, url: page.url, score };
+  });
+  return [...paperHits, ...externalHits]
+    .filter((p) => p.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit);
+}
+
+export async function fetchDocsPage(pathOrUrl: string): Promise<{
+  url: string;
+  title: string;
+  markdown: string;
+}> {
+  const url = pathOrUrl.startsWith("http")
+    ? pathOrUrl
+    : `${DOCS_BASE}${pathOrUrl.startsWith("/") ? "" : "/"}${pathOrUrl}`;
+
+  const html = await fetchText(url, {
+    cacheKey: `docs:${url}`,
+    ttlMs: 12 * 60 * 60 * 1000,
+  });
+  const $ = cheerio.load(html);
+  $("script, style, nav, footer, .sidebar").remove();
+  const title = $("h1").first().text().trim() || $("title").text().trim();
+  const main =
+    $("article").text() ||
+    $("main").text() ||
+    $(".content").text() ||
+    $("body").text();
+  const markdown = main.replace(/\s+/g, " ").trim().slice(0, 25000);
+  return { url, title, markdown };
+}

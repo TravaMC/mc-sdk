@@ -1,0 +1,19 @@
+name: SampleStick
+version: '${version}'
+main: dev.example.samplestick.SampleStickPlugin
+api-version: '1.21'
+description: Demo Paper plugin — magical leap stick (built with mc-sdk)
+authors: [Example]
+commands:
+  samplestick:
+    description: Give yourself the Sample Stick
+    usage: /samplestick give
+    permission: samplestick.give
+    aliases: [sstick]
+permissions:
+  samplestick.give:
+    description: Allows giving the Sample Stick
+    default: op
+  samplestick.use:
+    description: Allows using the Sample Stick
+    default: true

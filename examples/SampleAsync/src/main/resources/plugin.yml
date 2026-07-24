@@ -1,0 +1,14 @@
+name: SampleAsync
+version: '${version}'
+main: dev.example.sampleasync.SampleAsyncPlugin
+api-version: '1.21'
+description: Demo async CPU snapshot → compute → batched apply
+authors: [example]
+commands:
+  sampleasync:
+    description: Run async math demo (spiral particles)
+    usage: /sampleasync spiral
+    permission: sampleasync.use
+permissions:
+  sampleasync.use:
+    default: true
