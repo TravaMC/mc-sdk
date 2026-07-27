@@ -70,6 +70,12 @@ import { resolveDependency } from "./deps/resolve.js";
 import { scaffoldProject } from "./scaffold.js";
 import { validateBuildGradle } from "./validateBuild.js";
 import { normalizeGameVersion } from "./versioning.js";
+import {
+  ASK_USER_FOR_VERSION,
+  SERVER_INSTRUCTIONS,
+  matchConfirmedDetection,
+  versionSourceSchema,
+} from "./versionGate.js";
 
 function text(data: unknown) {
   const body = typeof data === "string" ? data : JSON.stringify(data, null, 2);
@@ -88,18 +94,39 @@ async function requireVersion(
   version?: string,
   platform?: Platform
 ) {
-  const resolved = await resolveVersion(projectRoot, version, platform);
-  if (resolved.source === "missing" || !resolved.version) {
+  if (projectRoot) {
+    const config = await loadProjectConfig(projectRoot);
+    if (config?.paperVersion || config?.velocityVersion) {
+      const resolved = await resolveVersion(projectRoot, undefined, platform);
+      if (resolved.source === "missing" || !resolved.version) {
+        return errorText(ASK_USER_FOR_VERSION);
+      }
+      if (
+        version?.trim() &&
+        normalizeGameVersion(version).version !==
+          normalizeGameVersion(resolved.version).version
+      ) {
+        return errorText(
+          `Project is pinned to ${resolved.platform} ${resolved.version}. ` +
+            `Do not switch to invented "${version}". If the user wants a different version, ask them, then mc_set_version with versionSource=user_stated.`
+        );
+      }
+      return {
+        version: resolved.version,
+        platform: resolved.platform,
+        config: resolved.config,
+        warning: resolved.warning,
+      };
+    }
+  }
+
+  if (version?.trim()) {
     return errorText(
-      "Version not set. Call mc_set_version (platform paper|velocity|folia|purpur) or mc_detect_version, or pass version explicitly."
+      "Do not pass an invented version= without a project pin. " + ASK_USER_FOR_VERSION
     );
   }
-  return {
-    version: resolved.version,
-    platform: resolved.platform,
-    config: resolved.config,
-    warning: resolved.warning,
-  };
+
+  return errorText(ASK_USER_FOR_VERSION);
 }
 
 const platformEnum = z.enum(["paper", "velocity", "folia", "purpur"]);
@@ -109,25 +136,29 @@ const PKG = JSON.parse(
 ) as { name: string; version: string };
 
 export function createServer(): McpServer {
-  const server = new McpServer({
-    name: PKG.name,
-    version: PKG.version,
-  });
+  const server = new McpServer(
+    {
+      name: PKG.name,
+      version: PKG.version,
+    },
+    { instructions: SERVER_INSTRUCTIONS }
+  );
 
   // —— Version / project memory ——
   server.tool(
     "mc_set_version",
-    "Pin Paper, Folia, Purpur, or Velocity version for a project. Writes .mc-sdk.json and a Cursor rule.",
+    "Pin Paper, Folia, Purpur, or Velocity version after the user stated or confirmed it. Writes .mc-sdk.json and a Cursor rule. NEVER invent a version — ask the user first.",
     {
       projectRoot: z.string().describe("Absolute path to plugin project root"),
       version: z
         .string()
         .describe(
-          "Paper/Folia/Purpur calendar id (e.g. 26.2, 1.21.1). Alias: 1.26.2 → 26.2. Velocity: 3.4.0 / latest"
+          "Exact version the user stated or confirmed (e.g. 26.2, 1.21.1). Alias: 1.26.2 → 26.2. Velocity: 3.4.0 / latest. Do not invent."
         ),
+      versionSource: versionSourceSchema,
       platform: platformEnum
         .optional()
-        .describe("Target platform (default paper)"),
+        .describe("Target platform (default paper) — ask the user if unknown"),
       notes: z.string().optional(),
       folia: z
         .boolean()
@@ -143,6 +174,7 @@ export function createServer(): McpServer {
     async ({
       projectRoot,
       version,
+      versionSource,
       platform,
       notes,
       folia,
@@ -150,6 +182,7 @@ export function createServer(): McpServer {
       minecraftVersion,
       allowUnavailable,
     }) => {
+      void versionSource;
       const plat: Platform = platform ?? "paper";
       if (plat === "velocity") {
         const resolved = await resolveVelocityJavadocVersion(version);
@@ -273,12 +306,12 @@ export function createServer(): McpServer {
 
   server.tool(
     "mc_get_config",
-    "Read pinned project config (.mc-sdk.json).",
+    "Read pinned project config (.mc-sdk.json). If missing, ask the user for version — do not invent one.",
     { projectRoot: z.string() },
     async ({ projectRoot }) => {
       const config = await loadProjectConfig(projectRoot);
       if (!config) {
-        return errorText(`No config in ${projectRoot}. Use mc_set_version or mc_detect_version.`);
+        return errorText(ASK_USER_FOR_VERSION);
       }
       return text(config);
     }
@@ -286,35 +319,40 @@ export function createServer(): McpServer {
 
   server.tool(
     "mc_detect_version",
-    "Auto-detect Paper, Folia, Purpur, or Velocity version from Gradle/Maven/plugin.yml; optionally pin.",
+    "Detect Paper/Folia/Purpur/Velocity version hints from Gradle/Maven/plugin.yml. Shows candidates only — pin=true requires the user to confirm an exact version first.",
     {
       projectRoot: z.string(),
       pin: z
         .boolean()
         .optional()
-        .describe("If true, save the best match via mc_set_version"),
+        .describe(
+          "Only after the user confirmed a detected version. Requires userConfirmedVersion."
+        ),
+      userConfirmedVersion: z
+        .string()
+        .optional()
+        .describe(
+          "When pin=true: exact version string the user confirmed (must match a detected hit)"
+        ),
       folia: z
         .boolean()
         .optional()
         .describe("Force Folia flag when pinning a Paper hit"),
     },
-    async ({ projectRoot, pin, folia }) => {
+    async ({ projectRoot, pin, userConfirmedVersion, folia }) => {
       const detected = await detectVersionFromProject(projectRoot);
       if (!detected.length) {
         return errorText(
-          "No version found in build files. Pass version to mc_set_version manually."
+          "No version found in build files. " + ASK_USER_FOR_VERSION
         );
       }
       let pinned = null;
       if (pin) {
-        const best = pickBestDetection(detected);
-        if (!best?.version) {
-          return text({
-            detected,
-            pinned: null,
-            note: "Best hit has no version string; pin manually with mc_set_version.",
-          });
+        const match = matchConfirmedDetection(detected, userConfirmedVersion);
+        if (!match.ok) {
+          return errorText(match.message);
         }
+        const best = match.hit;
         if (best.platform === "velocity") {
           const resolved = await resolveVelocityJavadocVersion(best.version);
           const version = resolved.available
@@ -362,7 +400,14 @@ export function createServer(): McpServer {
           }
         }
       }
-      return text({ detected, pinned, best: pickBestDetection(detected) });
+      return text({
+        detected,
+        pinned,
+        best: pickBestDetection(detected),
+        note: pin
+          ? undefined
+          : "Do not pin yet. Show these candidates to the user and ask which version/platform to use.",
+      });
     }
   );
 
@@ -916,7 +961,7 @@ export function createServer(): McpServer {
 
   server.tool(
     "mc_template",
-    "Generate starter snippets: Paper/Purpur Gradle (26.x Java 25), async_io/cpu/secure, Folia, paperweight, Velocity, windows_build_ps1.",
+    "Generate starter snippets from the pinned project version. Ask the user and mc_set_version first if unpinned.",
     {
       kind: z.enum([
         "listener",
@@ -941,47 +986,44 @@ export function createServer(): McpServer {
       packageName: z.string().optional(),
       className: z.string().optional(),
       pluginName: z.string().optional(),
-      projectRoot: z.string().optional(),
-      version: z.string().optional(),
+      projectRoot: z
+        .string()
+        .describe("Plugin project root with .mc-sdk.json pin"),
       folia: z.boolean().optional(),
       nms: z.boolean().optional(),
     },
     async (args) => {
-      let version = args.version;
-      let folia = args.folia;
-      let nms = args.nms;
-      if (args.projectRoot) {
-        const cfg = await loadProjectConfig(args.projectRoot);
-        version =
-          version ??
-          (cfg?.platform === "velocity"
-            ? cfg.velocityVersion ?? cfg.paperVersion
-            : cfg?.paperVersion);
-        folia = folia ?? cfg?.folia;
-        nms = nms ?? cfg?.nms;
+      const cfg = await loadProjectConfig(args.projectRoot);
+      if (!cfg?.paperVersion && !cfg?.velocityVersion) {
+        return errorText(ASK_USER_FOR_VERSION);
       }
+      const version =
+        cfg.platform === "velocity"
+          ? cfg.velocityVersion ?? cfg.paperVersion
+          : cfg.paperVersion;
+      const folia = args.folia ?? cfg.folia;
+      const nms = args.nms ?? cfg.nms;
       const rendered = renderTemplate(args.kind as TemplateKind, {
         packageName: args.packageName,
         className: args.className,
         pluginName: args.pluginName,
-          version: version ?? "26.2",
+        version,
         folia,
         nms,
       });
-      const norm = version ? normalizeGameVersion(version) : null;
-      return text(
-        norm?.warning
-          ? `${rendered}\n\n// VERSION NOTE: ${norm.warning}`
-          : rendered
-      );
+      return text(rendered);
     }
   );
 
   server.tool(
     "mc_resolve_dependency",
-    "One-shot Gradle resolve: paper-api/purpur-api OR nms=true → userdev + paperDevBundle + min Gradle. Purpur timeout → paper-api fallback.",
+    "Resolve Gradle coords for the pinned project version (or after user-stated pin). Never invent a version.",
     {
-      version: z.string().optional().describe("e.g. 26.2 or mistaken 1.26.2"),
+      version: z
+        .string()
+        .optional()
+        .describe("Only with versionSource after user stated it; prefer projectRoot pin"),
+      versionSource: versionSourceSchema.optional(),
       platform: platformEnum.optional(),
       preferStable: z.boolean().optional().describe("Prefer *-stable over beta/alpha (default true)"),
       allowPaperFallback: z
@@ -992,25 +1034,42 @@ export function createServer(): McpServer {
         .boolean()
         .optional()
         .describe("If true, resolve paperweight-userdev + paperDevBundle (not paper-api)"),
-      projectRoot: z.string().optional().describe("Optional: use pinned version when version omitted"),
+      projectRoot: z.string().optional().describe("Use pinned .mc-sdk.json version"),
     },
-    async ({ version, platform, preferStable, allowPaperFallback, nms: nmsArg, projectRoot }) => {
+    async ({
+      version,
+      versionSource,
+      platform,
+      preferStable,
+      allowPaperFallback,
+      nms: nmsArg,
+      projectRoot,
+    }) => {
       try {
-        let ver = version;
-        let plat = platform;
+        let ver = "";
+        let plat: Platform = platform ?? "paper";
         let nms = nmsArg;
-        if ((!ver || !plat) && projectRoot) {
+        if (projectRoot) {
           const cfg = await loadProjectConfig(projectRoot);
-          ver = ver || cfg?.paperVersion || "";
-          plat = plat ?? cfg?.platform ?? "paper";
-          if (nms === undefined && cfg?.nms) nms = true;
+          if (cfg?.paperVersion || cfg?.velocityVersion) {
+            ver =
+              cfg.platform === "velocity"
+                ? cfg.velocityVersion ?? cfg.paperVersion
+                : cfg.paperVersion;
+            plat = platform ?? cfg.platform ?? "paper";
+            if (nms === undefined && cfg.nms) nms = true;
+          }
+        }
+        if (!ver && version?.trim() && versionSource) {
+          ver = normalizeGameVersion(version).version;
+          plat = platform ?? "paper";
         }
         if (!ver) {
-          return errorText("Pass version or projectRoot with a pinned config.");
+          return errorText(ASK_USER_FOR_VERSION);
         }
         const result = await resolveDependency({
           version: ver,
-          platform: plat ?? "paper",
+          platform: plat,
           preferStable,
           allowPaperFallback,
           nms,
@@ -1024,17 +1083,30 @@ export function createServer(): McpServer {
 
   server.tool(
     "mc_scaffold_project",
-    "Write a full plugin scaffold: settings.gradle.kts, build.gradle.kts, plugin.yml, main+listener, .gitignore, build.ps1, README.",
+    "Write a full plugin scaffold. Version must be user-stated or user-confirmed — never invent one.",
     {
       projectRoot: z.string().describe("Absolute path for the new/empty project root"),
-      version: z.string(),
+      version: z
+        .string()
+        .describe("Exact version the user stated or confirmed — do not invent"),
+      versionSource: versionSourceSchema,
       platform: platformEnum.optional(),
       packageName: z.string().optional(),
       className: z.string().optional(),
       pluginName: z.string().optional(),
       pin: z.boolean().optional().describe("Also write .mc-sdk.json (default true)"),
     },
-    async ({ projectRoot, version, platform, packageName, className, pluginName, pin }) => {
+    async ({
+      projectRoot,
+      version,
+      versionSource,
+      platform,
+      packageName,
+      className,
+      pluginName,
+      pin,
+    }) => {
+      void versionSource;
       try {
         const plat = platform ?? "paper";
         const result = await scaffoldProject({
@@ -1137,26 +1209,17 @@ export function createServer(): McpServer {
 
   server.tool(
     "mc_nms_search",
-    "Search Mojang-mapped NMS class names. For 26.1+ (no server_mappings) falls back to 1.21.11 with an explicit warning.",
+    "Search Mojang-mapped NMS class names for the pinned project. For 26.1+ falls back to 1.21.11 with warning.",
     {
       query: z.string().describe("e.g. ServerPlayer, Abilities, ClientboundPlayerAbilitiesPacket"),
-      projectRoot: z.string().optional(),
-      version: z
-        .string()
-        .optional()
-        .describe("Paper or Minecraft version; defaults to project minecraftVersion/paperVersion"),
+      projectRoot: z.string().describe("Project root with .mc-sdk.json pin"),
       limit: z.number().int().min(1).max(50).optional(),
     },
-    async ({ query, projectRoot, version, limit }) => {
+    async ({ query, projectRoot, limit }) => {
       try {
-        let ver = version;
-        if (!ver && projectRoot) {
-          const cfg = await loadProjectConfig(projectRoot);
-          ver = cfg?.minecraftVersion ?? cfg?.paperVersion;
-        }
-        if (!ver) {
-          return errorText("Pass version or projectRoot with pinned config.");
-        }
+        const cfg = await loadProjectConfig(projectRoot);
+        const ver = cfg?.minecraftVersion ?? cfg?.paperVersion;
+        if (!ver) return errorText(ASK_USER_FOR_VERSION);
         return text(await searchNms(ver, query, limit ?? 25));
       } catch (e) {
         return errorText(e instanceof Error ? e.message : String(e));
@@ -1166,22 +1229,18 @@ export function createServer(): McpServer {
 
   server.tool(
     "mc_nms_class",
-    "Get NMS class fields/methods from Mojang server mappings (+ mappings.dev). 26.1+ falls back to nearest mapped version with warning.",
+    "Get NMS class fields/methods for the pinned project. 26.1+ falls back to nearest mapped version with warning.",
     {
       className: z
         .string()
         .describe("Simple or FQCN, e.g. ServerPlayer or net.minecraft.server.level.ServerPlayer"),
-      projectRoot: z.string().optional(),
-      version: z.string().optional(),
+      projectRoot: z.string().describe("Project root with .mc-sdk.json pin"),
     },
-    async ({ className, projectRoot, version }) => {
+    async ({ className, projectRoot }) => {
       try {
-        let ver = version;
-        if (!ver && projectRoot) {
-          const cfg = await loadProjectConfig(projectRoot);
-          ver = cfg?.minecraftVersion ?? cfg?.paperVersion;
-        }
-        if (!ver) return errorText("Pass version or projectRoot with pinned config.");
+        const cfg = await loadProjectConfig(projectRoot);
+        const ver = cfg?.minecraftVersion ?? cfg?.paperVersion;
+        if (!ver) return errorText(ASK_USER_FOR_VERSION);
         const result = await getNmsClass(ver, className);
         return text({
           requestedVersion: result.requestedVersion,
@@ -1217,7 +1276,11 @@ export function createServer(): McpServer {
           mimeType: "text/markdown",
           text: `# mc-sdk
 
-Tools use the \`mc_\` prefix. Pin with \`mc_set_version\` (\`platform: paper|velocity|folia|purpur\`).
+Tools use the \`mc_\` prefix.
+
+## HARD RULE
+Never invent Paper/MC/Velocity version. If the user did not state one and \`.mc-sdk.json\` is missing: **ask them**. Then \`mc_set_version\` with \`versionSource=user_stated\` (or detect → user confirms → \`user_confirmed_detection\`).
+
 Alias: \`1.26.2\` → \`26.2\` (with warning). Prefer \`mc_resolve_dependency\` for Gradle coords.
 
 ## Categories
@@ -1393,15 +1456,16 @@ In-repo Markdown: docs/api-vs-nms.md, docs/async.md, docs/build-guidance.md, doc
           content: {
             type: "text" as const,
             text: `Create a Paper plugin for: ${goal}
-Pinned version hint: ${version ?? "(detect or ask)"}
+Pinned version: ${version ?? "(UNKNOWN — ask the user before any pin/scaffold; never invent)"}
 
 Required workflow:
-1. mc_set_version / mc_detect_version (1.26.x aliases to 26.x)
-2. mc_resolve_dependency — paste Gradle coords (not hand-written -R0.1-SNAPSHOT on 26.x)
-3. Or mc_scaffold_project for a full tree
-4. mc_search_api / mc_lookup_* — do not invent API members
-5. mc_async_guide before any HTTP/DB/heavy math (auth: async_secure)
-6. mc_commands_guide before commands
+1. If version unknown: ASK the user (platform + version). Do not guess 1.21.x / 26.x / latest.
+2. mc_set_version with versionSource=user_stated (or detect → user confirms → user_confirmed_detection). Alias 1.26.x → 26.x
+3. mc_resolve_dependency — paste Gradle coords (not hand-written -R0.1-SNAPSHOT on 26.x)
+4. Or mc_scaffold_project with the same versionSource
+5. mc_search_api / mc_lookup_* — do not invent API members
+6. mc_async_guide before any HTTP/DB/heavy math (auth: async_secure)
+7. mc_commands_guide before commands
 Prefer Paper API over NMS (mc_api_vs_nms). Windows Cyrillic paths: build.ps1 / mc_build_guidance.`,
           },
         },

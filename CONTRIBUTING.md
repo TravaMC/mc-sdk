@@ -30,6 +30,7 @@ Edit the Markdown first, then smoke-test the matching tool.
 ## Scope
 
 - Prefer accurate, version-aware lookups over inventing API members.
+- Never invent Paper/MC version: ask the user (or confirm detect) before `mc_set_version` / scaffold.
 - Keep NMS guidance conservative: API-first, isolate internals, pin versions.
 - Do not commit Mojang mapping dumps, Paper decompiled sources, or API keys.
 - Keep the MCP tool count lean — Cursor’s catalog can drop tools near ~40 entries.

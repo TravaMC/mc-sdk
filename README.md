@@ -2,7 +2,7 @@
 
 MCP-сервер для разработки плагинов **Paper**, **Folia**, **Purpur** и **Velocity**: версионированные Javadoc, документация PaperMC, поиск Hangar, шаблоны и lookup **Mojang-mapped NMS**.
 
-Агенты должны сначала закрепить платформу/версию, затем смотреть API — а не выдумывать члены классов из обучающих данных.
+Агенты должны сначала **узнать у пользователя** платформу/версию (или подтвердить detect), закрепить её, затем смотреть API — а не угадывать версию и не выдумывать члены классов.
 
 [![CI](https://github.com/TravaMC/mc-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/TravaMC/mc-sdk/actions/workflows/ci.yml)
 
@@ -47,7 +47,7 @@ npm link          # опционально — `mc-sdk` в PATH
 ```
 
 После правок кода: `npm run build`, затем перезапустите MCP (Off→On).  
-Проверка: `mc_cache_stats` → `sdkPackageVersion` (`3.0.0`+).
+Проверка: `mc_cache_stats` → `sdkPackageVersion` (`3.0.1`+).
 
 См. [`mcp.json.example`](mcp.json.example).
 
@@ -64,6 +64,8 @@ npm link          # опционально — `mc-sdk` в PATH
 | NMS lookup | `mc_nms_search`, `mc_nms_class` |
 
 **Совет для 26.x:** не выдумывайте `1.26.2-R0.1-SNAPSHOT` — вызывайте `mc_resolve_dependency`. Алиас `1.26.2` → `26.2` срабатывает автоматически с предупреждением. NMS на 26.1+: `nms: true`, `MOJANG_PRODUCTION`, без `reobfJar`.
+
+**Версия:** если пользователь не назвал Paper/MC версию и нет `.mc-sdk.json` — агент обязан спросить. `mc_set_version` / `mc_scaffold_project` требуют `versionSource=user_stated|user_confirmed_detection`; `mc_detect_version` с `pin=true` — только с `userConfirmedVersion`.
 
 ## Руководства
 

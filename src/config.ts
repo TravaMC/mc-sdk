@@ -108,6 +108,13 @@ function cursorRuleContent(config: ProjectConfig): string {
   const footer = `Javadocs: ${config.javadocBaseUrl}
 Config: \`${CONFIG_FILENAME}\`
 `;
+  const versionLock = `
+## Version lock (do not bypass)
+
+- Pinned target: **${platformLabel(platform)} ${version}**.
+- Do **not** change platform/version, invent another (1.21.x / 26.x / latest), or re-pin unless the user explicitly asks.
+- If the user never stated a version in chat and this pin looks wrong: stop and ask them.
+`;
 
   if (platform === "velocity") {
     return `---
@@ -119,7 +126,7 @@ alwaysApply: true
 # Velocity plugin project
 
 Targets **Velocity ${version}**.
-
+${versionLock}
 ## Required workflow
 
 1. Use MCP **mc-sdk** (\`mc_velocity_*\` / \`mc_search_api\` with platform=velocity).
@@ -141,7 +148,7 @@ alwaysApply: true
 # Folia plugin project
 
 Targets **Folia ${version}** (Minecraft **${config.minecraftVersion ?? version}**).
-
+${versionLock}
 ## Required workflow
 
 1. Use MCP **mc-sdk** (\`mc_search_api\` / \`mc_get_class\` with platform=folia).
@@ -164,7 +171,7 @@ alwaysApply: true
 # Purpur plugin project
 
 Targets **Purpur ${version}** (Minecraft **${config.minecraftVersion ?? version}**).
-
+${versionLock}
 ## Required workflow
 
 1. Use MCP **mc-sdk** with \`platform=purpur\` (\`mc_search_api\` / \`mc_get_class\`).
@@ -186,7 +193,7 @@ alwaysApply: true
 # Minecraft plugin project (Paper${config.folia ? " + Folia" : ""}${config.nms ? " + NMS/paperweight" : ""})
 
 Targets **Paper ${config.paperVersion}** (Minecraft **${config.minecraftVersion ?? config.paperVersion}**).
-
+${versionLock}
 ## Required workflow
 
 1. Use MCP **mc-sdk** before inventing API/NMS members.

@@ -355,3 +355,44 @@ describe("cache", () => {
     assert.ok(cacheDir().includes("mc-sdk"));
   });
 });
+
+describe("versionGate", () => {
+  it("rejects pin without userConfirmedVersion", async () => {
+    const { matchConfirmedDetection, ASK_USER_FOR_VERSION } = await import(
+      "../src/versionGate.js"
+    );
+    const miss = matchConfirmedDetection(
+      [{ version: "26.2" }, { version: "1.21.1" }],
+      undefined
+    );
+    assert.equal(miss.ok, false);
+    if (!miss.ok) assert.match(miss.message, /user confirmation/i);
+    assert.match(ASK_USER_FOR_VERSION, /Ask the user/i);
+  });
+
+  it("matches confirmed detection including 1.26.x alias", async () => {
+    const { matchConfirmedDetection } = await import("../src/versionGate.js");
+    const hit = matchConfirmedDetection(
+      [{ version: "26.2" }, { version: "1.21.1" }],
+      "1.26.2"
+    );
+    assert.equal(hit.ok, true);
+    if (hit.ok) assert.equal(hit.hit.version, "26.2");
+
+    const bad = matchConfirmedDetection([{ version: "26.2" }], "1.21.8");
+    assert.equal(bad.ok, false);
+  });
+
+  it("writes version lock into Cursor rule", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "mpsdk-rule-"));
+    after(async () => {
+      await rm(root, { recursive: true, force: true });
+    });
+    await saveProjectConfig(root, "26.2", { platform: "paper" });
+    const { readFile } = await import("node:fs/promises");
+    const { CURSOR_RULE_PATH } = await import("../src/config.js");
+    const rule = await readFile(path.join(root, CURSOR_RULE_PATH), "utf8");
+    assert.match(rule, /Version lock/);
+    assert.match(rule, /Do \*\*not\*\* change platform\/version/);
+  });
+});
