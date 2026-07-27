@@ -137,6 +137,24 @@ export interface FetchTextOptions {
  * - network fail + stale → return stale (offline-friendly)
  * Never dumps cache files into tool output — callers parse summaries.
  */
+export function formatFetchError(err: unknown, url?: string): string {
+  const parts: string[] = [];
+  if (url) parts.push(url);
+  let cur: unknown = err;
+  for (let depth = 0; cur && depth < 4; depth++) {
+    if (cur instanceof Error) {
+      parts.push(cur.message);
+      const code = (cur as NodeJS.ErrnoException).code;
+      if (code) parts.push(`code=${code}`);
+      cur = cur.cause;
+      continue;
+    }
+    parts.push(String(cur));
+    break;
+  }
+  return parts.join(" | ");
+}
+
 export async function fetchText(
   url: string,
   options?: FetchTextOptions
@@ -197,7 +215,7 @@ export async function fetchText(
   // Offline / flaky network: prefer stale over failing the agent turn
   if (staleValue != null) return staleValue;
 
-  throw lastError instanceof Error ? lastError : new Error(String(lastError));
+  throw new Error(formatFetchError(lastError, url));
 }
 
 export interface CacheStats {

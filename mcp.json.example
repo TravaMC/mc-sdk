@@ -1,7 +1,8 @@
 {
   "mcpServers": {
     "mc-sdk": {
-      "command": "mc-sdk"
+      "command": "node",
+      "args": ["C:/Users/Максим/Desktop/mc-sdk/dist/index.js"]
     }
   }
 }

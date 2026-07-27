@@ -481,19 +481,23 @@ export function createServer(): McpServer {
     async ({ query, projectRoot, version, platform, scope, limit }) => {
       const v = await requireVersion(projectRoot, version, platform);
       if ("isError" in v) return v;
-      const jdVer = javadocSearchVersion(v.platform, v.version);
-      const results = await searchApi(jdVer, query, {
-        scope,
-        limit,
-        platform: v.platform,
-      });
-      return text({
-        platform: v.platform,
-        version: v.version,
-        javadocVersion: jdVer || "root",
-        query,
-        ...results,
-      });
+      try {
+        const jdVer = javadocSearchVersion(v.platform, v.version);
+        const results = await searchApi(jdVer, query, {
+          scope,
+          limit,
+          platform: v.platform,
+        });
+        return text({
+          platform: v.platform,
+          version: v.version,
+          javadocVersion: jdVer || "root",
+          query,
+          ...results,
+        });
+      } catch (e) {
+        return errorText(e instanceof Error ? e.message : String(e));
+      }
     }
   );
 
@@ -905,13 +909,22 @@ export function createServer(): McpServer {
     async ({ query, projectRoot, version, scope, limit }) => {
       const v = await requireVersion(projectRoot, version, "velocity");
       if ("isError" in v) return v;
-      const ver = v.version === "latest" ? "" : v.version;
-      const results = await searchApi(ver, query, {
-        scope,
-        limit,
-        platform: "velocity",
-      });
-      return text({ platform: "velocity", version: v.version, query, ...results });
+      try {
+        const ver = v.version === "latest" ? "" : v.version;
+        const results = await searchApi(ver, query, {
+          scope,
+          limit,
+          platform: "velocity",
+        });
+        return text({
+          platform: "velocity",
+          version: v.version,
+          query,
+          ...results,
+        });
+      } catch (e) {
+        return errorText(e instanceof Error ? e.message : String(e));
+      }
     }
   );
 
