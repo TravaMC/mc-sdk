@@ -15,6 +15,7 @@ import { findEventsByScenario } from "./events.js";
 import {
   apiVsNmsMarkdown,
   asyncGuidanceMarkdown,
+  adventureGuidanceMarkdown,
   buildGuidanceMarkdown,
   commandsGuidanceMarkdown,
   foliaGuidanceMarkdown,
@@ -778,7 +779,7 @@ export function createServer(): McpServer {
 
   server.tool(
     "mc_adventure_search",
-    "Search Adventure API Javadocs (components, audiences, MiniMessage-related types).",
+    "Search Adventure API Javadocs (Component, Audience, MiniMessage). Prefer over Bungee legacy chat — see mc_adventure_guide.",
     {
       query: z.string(),
       limit: z.number().int().min(1).max(50).optional(),
@@ -790,6 +791,13 @@ export function createServer(): McpServer {
         return errorText(e instanceof Error ? e.message : String(e));
       }
     }
+  );
+
+  server.tool(
+    "mc_adventure_guide",
+    "Adventure Component/Audience/MiniMessage rules for Paper and Velocity. Bans Bungee legacy chat; LimboAPI must use Component too.",
+    {},
+    async () => text(await adventureGuidanceMarkdown())
   );
 
   server.tool(
@@ -871,7 +879,7 @@ export function createServer(): McpServer {
 
   server.tool(
     "mc_velocity_guide",
-    "Velocity proxy plugin development overview and Javadoc links.",
+    "Velocity proxy plugins: setup, Adventure text (not legacy), LimboAPI notes, Javadoc links.",
     {},
     async () => text(await velocityGuidanceMarkdown())
   );
@@ -1300,12 +1308,12 @@ Alias: \`1.26.2\` → \`26.2\` (with warning). Prefer \`mc_resolve_dependency\` 
 - Version: mc_set_version, mc_get_config, mc_detect_version, mc_list_versions, mc_paper_builds, mc_resolve_dependency
 - Paper/Folia API: mc_search_api, mc_get_class, mc_lookup_*, mc_find_event, mc_diff_api
 - Velocity: mc_velocity_list_versions, mc_velocity_search_api, mc_velocity_get_class, mc_velocity_guide
-- Docs: mc_docs_search, mc_docs_get, mc_adventure_search, mc_folia_guide, mc_async_guide, mc_commands_guide, mc_purpur_guide
+- Docs: mc_docs_search, mc_docs_get, mc_adventure_guide, mc_adventure_search, mc_folia_guide, mc_async_guide, mc_commands_guide, mc_purpur_guide
 - Build / API vs NMS: mc_build_guidance, mc_api_vs_nms
 - Project: mc_scaffold_project, mc_validate_build_gradle, mc_validate_plugin_yml, mc_template, mc_hangar_search, mc_cache_stats, mc_cache_clear
 - NMS: mc_nms_guidance, mc_nms_search, mc_nms_class, mc_remapper_guidance
 
-In-repo Markdown: docs/api-vs-nms.md, docs/async.md, docs/build-guidance.md, docs/commands.md, docs/folia.md, docs/nms.md, docs/purpur.md, docs/velocity.md
+In-repo Markdown: docs/adventure.md, docs/api-vs-nms.md, docs/async.md, docs/build-guidance.md, docs/commands.md, docs/folia.md, docs/nms.md, docs/purpur.md, docs/velocity.md
 `,
         },
       ],
@@ -1450,6 +1458,24 @@ In-repo Markdown: docs/api-vs-nms.md, docs/async.md, docs/build-guidance.md, doc
           uri: "minecraft://guides/velocity",
           mimeType: "text/markdown",
           text: await velocityGuidanceMarkdown(),
+        },
+      ],
+    })
+  );
+
+  server.resource(
+    "adventure-guide",
+    "minecraft://guides/adventure",
+    {
+      mimeType: "text/markdown",
+      description: "Adventure Component API — Paper + Velocity (no Bungee legacy)",
+    },
+    async () => ({
+      contents: [
+        {
+          uri: "minecraft://guides/adventure",
+          mimeType: "text/markdown",
+          text: await adventureGuidanceMarkdown(),
         },
       ],
     })

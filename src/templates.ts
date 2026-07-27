@@ -301,10 +301,13 @@ Write-Host "OK: jars copied to $out"
       return `package ${pkg};
 
 import com.google.inject.Inject;
+import com.velocitypowered.api.command.SimpleCommand;
 import com.velocitypowered.api.event.Subscribe;
 import com.velocitypowered.api.event.proxy.ProxyInitializeEvent;
 import com.velocitypowered.api.plugin.Plugin;
 import com.velocitypowered.api.proxy.ProxyServer;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
 import org.slf4j.Logger;
 
 @Plugin(id = "${pluginName.toLowerCase()}", name = "${pluginName}", version = "1.0.0", authors = {"You"})
@@ -320,8 +323,14 @@ public final class ${cls} {
 
     @Subscribe
     public void onProxyInit(ProxyInitializeEvent event) {
-        logger.info("${pluginName} enabled on Velocity ${version}");
-        // Look up events with mc_velocity_search_api
+        server.getCommandManager().register(
+            server.getCommandManager().metaBuilder("${pluginName.toLowerCase()}").plugin(this).build(),
+            (SimpleCommand) invocation -> invocation.source().sendMessage(
+                Component.text("${pluginName} online (Velocity ${version})", NamedTextColor.GREEN)
+            )
+        );
+        logger.info("${pluginName} enabled — Adventure Component text only (no Bungee legacy chat)");
+        // Look up events with mc_velocity_search_api; text: mc_adventure_guide
     }
 }
 `;

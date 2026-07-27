@@ -16,8 +16,12 @@ export const DOCS_CATALOG: Array<{
   { title: "Event listeners", path: "/paper/dev/event-listeners/", tags: ["events", "listener"] },
   { title: "Paper API index", path: "/paper/dev/api/", tags: ["api", "paper", "commands", "reference"] },
   { title: "Command API", path: "/paper/dev/api/command-api/", tags: ["commands", "brigadier", "command"] },
-  { title: "Adventure / Component API", path: "/paper/dev/api/component-api/", tags: ["adventure", "component", "chat"] },
-  { title: "Adventure docs", path: "/adventure/", tags: ["adventure", "minimessage"] },
+  { title: "Adventure / Component API", path: "/paper/dev/api/component-api/", tags: ["adventure", "component", "chat", "minimessage", "legacy"] },
+  { title: "Adventure docs", path: "/adventure/", tags: ["adventure", "minimessage", "audience", "component", "velocity"] },
+  { title: "Adventure text components", path: "/adventure/text/", tags: ["adventure", "component", "text"] },
+  { title: "Adventure MiniMessage", path: "/adventure/minimessage/", tags: ["adventure", "minimessage"] },
+  { title: "Adventure audiences", path: "/adventure/audiences/", tags: ["adventure", "audience"] },
+  { title: "Adventure serializers", path: "/adventure/serializer/", tags: ["adventure", "serializer", "legacy"] },
   { title: "Folia support", path: "/paper/dev/folia-support/", tags: ["folia", "region", "scheduler"] },
   { title: "Folia home", path: "/folia/", tags: ["folia"] },
   { title: "Folia FAQ", path: "/folia/faq/", tags: ["folia", "faq"] },
@@ -51,6 +55,11 @@ export const DOCS_CATALOG_EXTERNAL: Array<{
     title: "Purpur Javadocs",
     url: "https://purpurmc.org/javadoc/",
     tags: ["purpur", "javadoc", "api", "afk", "ridable"],
+  },
+  {
+    title: "LimboAPI (Velocity limbo library)",
+    url: "https://github.com/Elytrium/LimboAPI",
+    tags: ["limbo", "limboapi", "velocity", "elytrium", "adventure"],
   },
 ];
 

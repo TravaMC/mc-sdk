@@ -131,9 +131,10 @@ ${versionLock}
 
 1. Use MCP **mc-sdk** (\`mc_velocity_*\` / \`mc_search_api\` with platform=velocity).
 2. Confirm with \`mc_get_config\`.
-3. API: \`mc_velocity_search_api\`, \`mc_velocity_get_class\`.
-4. Docs: \`mc_docs_search\` (velocity tags) / \`mc_docs_get\`.
-5. Do not invent ProxyServer / event API from memory — look up **${version}**.
+3. **Text/UI:** Adventure only — \`mc_adventure_guide\` / \`mc_adventure_search\`. Never Bungee \`TextComponent\` / \`ChatColor\` / \`§\` (LimboAPI included).
+4. API: \`mc_velocity_search_api\`, \`mc_velocity_get_class\`.
+5. Docs: \`mc_docs_search\` (velocity tags) / \`mc_docs_get\` / \`mc_velocity_guide\`.
+6. Do not invent ProxyServer / event API from memory — look up **${version}**.
 
 ${footer}`;
   }
@@ -200,11 +201,12 @@ ${versionLock}
 2. Confirm version with \`mc_get_config\` / \`mc_detect_version\` (alias \`1.26.x\` → \`26.x\`).
 3. Gradle coords: \`mc_resolve_dependency\` — do not invent \`-R0.1-SNAPSHOT\` for 26.x.
 4. API-only path: \`mc_search_api\`, \`mc_get_class\`, \`mc_lookup_*\` + \`compileOnly paper-api\`.
-5. **Threading:** never block the main/region thread with HTTP/DB/disk/heavy math — read \`mc_async_guide\` / \`docs/async.md\`. Snapshot → async → batched apply.
-6. **Commands:** \`mc_commands_guide\` before inventing executors/Brigadier.
-7. NMS path (last resort): \`mc_api_vs_nms\` → \`mc_resolve_dependency\` \`nms: true\` → optional \`mc_nms_*\` (on 26.x expect mappingsFallback — then **verify members in paperDevBundle / IDE**, not from the tool alone) → \`compileJava\`.
-8. On Windows with non-ASCII user paths, build via \`build.ps1\` / ASCII temp dir (\`mc_build_guidance\`) — do this early.
-9. Folia: if enabled, follow \`mc_folia_guide\` (region/entity/async schedulers).
+5. **Text/UI:** Adventure \`Component\` / MiniMessage — \`mc_adventure_guide\`. No Bungee \`TextComponent\` / \`ChatColor\`.
+6. **Threading:** never block the main/region thread with HTTP/DB/disk/heavy math — read \`mc_async_guide\` / \`docs/async.md\`. Snapshot → async → batched apply.
+7. **Commands:** \`mc_commands_guide\` before inventing executors/Brigadier.
+8. NMS path (last resort): \`mc_api_vs_nms\` → \`mc_resolve_dependency\` \`nms: true\` → optional \`mc_nms_*\` (on 26.x expect mappingsFallback — then **verify members in paperDevBundle / IDE**, not from the tool alone) → \`compileJava\`.
+9. On Windows with non-ASCII user paths, build via \`build.ps1\` / ASCII temp dir (\`mc_build_guidance\`) — do this early.
+10. Folia: if enabled, follow \`mc_folia_guide\` (region/entity/async schedulers).
 ${
   config.nms
     ? `

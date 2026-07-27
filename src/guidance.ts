@@ -36,6 +36,14 @@ export async function velocityGuidanceMarkdown(): Promise<string> {
   );
 }
 
+/** Adventure / Component API (Paper + Velocity; avoid legacy chat). */
+export async function adventureGuidanceMarkdown(): Promise<string> {
+  return readDoc(
+    "adventure.md",
+    "# Adventure\n\nUse Component/Audience/MiniMessage. Avoid Bungee legacy chat. See docs/adventure.md.\n"
+  );
+}
+
 /** Folia region threading. */
 export async function foliaGuidanceMarkdown(): Promise<string> {
   return readDoc(

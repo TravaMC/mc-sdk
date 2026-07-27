@@ -47,7 +47,7 @@ npm link          # опционально — `mc-sdk` в PATH
 ```
 
 После правок кода: `npm run build`, затем перезапустите MCP (Off→On).  
-Проверка: `mc_cache_stats` → `sdkPackageVersion` (`3.0.2`+).
+Проверка: `mc_cache_stats` → `sdkPackageVersion` (`3.0.3`+).
 
 См. [`mcp.json.example`](mcp.json.example).
 
@@ -58,7 +58,7 @@ npm link          # опционально — `mc-sdk` в PATH
 | Версия | `mc_set_version`, `mc_get_config`, `mc_detect_version`, `mc_list_versions`, `mc_paper_builds`, **`mc_resolve_dependency`** |
 | Paper / Folia API | `mc_search_api`, `mc_get_class`, `mc_lookup_*`, `mc_find_event`, `mc_diff_api` |
 | Velocity | `mc_velocity_list_versions`, `mc_velocity_search_api`, `mc_velocity_get_class`, `mc_velocity_guide` |
-| Документация | `mc_docs_search`, `mc_docs_get`, `mc_adventure_search`, `mc_folia_guide`, **`mc_async_guide`**, `mc_commands_guide`, `mc_purpur_guide` |
+| Документация | `mc_docs_search`, `mc_docs_get`, **`mc_adventure_guide`**, `mc_adventure_search`, `mc_folia_guide`, **`mc_async_guide`**, `mc_commands_guide`, `mc_purpur_guide` |
 | **API vs NMS** | **`mc_api_vs_nms`**, `mc_build_guidance`, `mc_nms_guidance`, `mc_remapper_guidance` |
 | Проект | **`mc_scaffold_project`**, **`mc_validate_build_gradle`**, `mc_validate_plugin_yml`, `mc_template`, `mc_hangar_search`, `mc_cache_stats`, `mc_cache_clear` |
 | NMS lookup | `mc_nms_search`, `mc_nms_class` |
@@ -69,6 +69,7 @@ npm link          # опционально — `mc-sdk` в PATH
 
 ## Руководства
 
+- [docs/adventure.md](docs/adventure.md) — Adventure Component (Paper + Velocity; без Bungee legacy)  
 - [docs/async.md](docs/async.md) — главный поток vs async  
 - [docs/commands.md](docs/commands.md) — classic vs Brigadier  
 - [docs/purpur.md](docs/purpur.md) — API только Purpur  
@@ -76,9 +77,9 @@ npm link          # опционально — `mc-sdk` в PATH
 - [docs/api-vs-nms.md](docs/api-vs-nms.md) — когда оправдан NMS  
 - [docs/build-guidance.md](docs/build-guidance.md) — toolchain / пути Windows  
 - [docs/nms.md](docs/nms.md) — workflow paperweight  
-- [docs/velocity.md](docs/velocity.md) — proxy-плагины  
+- [docs/velocity.md](docs/velocity.md) — proxy + LimboAPI / Adventure  
 
-**По умолчанию:** Paper API (+ Adventure). Не блокируйте tick-поток HTTP/БД/диском (`mc_async_guide`).
+**По умолчанию:** Paper API (+ Adventure). На Velocity/LimboAPI — тоже Adventure (`mc_adventure_guide`), не `TextComponent`/`ChatColor`. Не блокируйте tick-поток HTTP/БД/диском (`mc_async_guide`).
 
 ## Типовые сценарии
 

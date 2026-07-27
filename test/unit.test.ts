@@ -171,12 +171,19 @@ describe("docs catalog", () => {
     assert.ok(paths.has("/paper/dev/pdc/"));
     assert.ok(paths.has("/folia/"));
     assert.ok(paths.has("/paper/dev/folia-support/"));
+    assert.ok(paths.has("/adventure/"));
+    assert.ok(paths.has("/adventure/minimessage/"));
   });
 
   it("search ranks adventure queries", () => {
     const hits = searchDocsCatalog("adventure component", 5);
     assert.ok(hits.length > 0);
     assert.ok(hits[0].path.includes("component") || hits[0].path.includes("adventure"));
+  });
+
+  it("search finds limbo / velocity adventure tags", () => {
+    const hits = searchDocsCatalog("limboapi adventure", 8);
+    assert.ok(hits.some((h) => /limbo/i.test(h.title) || h.tags.includes("limboapi")));
   });
 
   it("search finds async / performance docs", () => {
@@ -187,6 +194,21 @@ describe("docs catalog", () => {
   it("search finds purpur docs", () => {
     const hits = searchDocsCatalog("purpur afk", 5);
     assert.ok(hits.some((h) => h.url.includes("purpurmc.org")));
+  });
+});
+
+describe("adventure guide", () => {
+  it("bans Bungee legacy and mentions LimboAPI / Velocity", async () => {
+    const { adventureGuidanceMarkdown, velocityGuidanceMarkdown } = await import(
+      "../src/guidance.js"
+    );
+    const adventure = await adventureGuidanceMarkdown();
+    assert.match(adventure, /Component/);
+    assert.match(adventure, /md_5\.bungee|TextComponent/);
+    assert.match(adventure, /LimboAPI/);
+    const velocity = await velocityGuidanceMarkdown();
+    assert.match(velocity, /Adventure/);
+    assert.match(velocity, /LimboAPI/);
   });
 });
 

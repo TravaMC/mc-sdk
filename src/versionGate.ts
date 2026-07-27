@@ -32,6 +32,10 @@ HARD RULE — version must come from the user (or their confirmed detection), ne
 3. Optional mc_detect_version is OK to propose candidates, but never pin=true until the user confirms the exact version string.
 4. Never invent Gradle coords or API members for an assumed version — pin first, then look up.
 
+TEXT / UI — Adventure only (Paper and Velocity, including LimboAPI):
+- Use Component / Audience / MiniMessage. Read mc_adventure_guide (and mc_velocity_guide on proxy).
+- Do not use net.md_5.bungee.api.chat.* or ChatColor/§ as the primary API.
+
 Workflow: ask/confirm version → mc_set_version → mc_resolve_dependency / mc_search_api.`;
 
 /** When auto-pinning detection, require an exact user-confirmed version string. */
