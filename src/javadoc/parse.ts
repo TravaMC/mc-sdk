@@ -140,9 +140,9 @@ export function parseClassHtml(version: string, url: string, html: string): Clas
     description,
     signature,
     enumConstants: unique(enumConstants).slice(0, 5000),
-    fields: fields.slice(0, 200),
-    methods: methods.slice(0, 300),
-    nestedTypes: unique(nestedTypes).slice(0, 100),
+    fields: fields.slice(0, 500),
+    methods: methods.slice(0, 2500),
+    nestedTypes: unique(nestedTypes).slice(0, 200),
   };
 }
 
@@ -227,10 +227,30 @@ function unique(items: string[]): string[] {
 
 export function formatClassDoc(
   doc: ClassDoc,
-  options?: { includeEnumConstants?: boolean; maxMethods?: number }
+  options?: {
+    includeEnumConstants?: boolean;
+    maxMethods?: number;
+    /** Filter methods/fields by name, signature, or description (e.g. isFixedTime, setTime) */
+    memberQuery?: string;
+  }
 ): string {
   const includeEnums = options?.includeEnumConstants ?? doc.enumConstants.length <= 80;
-  const maxMethods = options?.maxMethods ?? 80;
+  const memberQuery = options?.memberQuery?.trim();
+  const qParts = memberQuery
+    ? memberQuery.toLowerCase().split(/[\s_|]+/).filter(Boolean)
+    : [];
+
+  const matchMember = (m: DocMember) => {
+    if (!qParts.length) return true;
+    const hay = `${m.name} ${m.signature} ${m.description}`.toLowerCase();
+    return qParts.every((p) => hay.includes(p));
+  };
+
+  const fields = doc.fields.filter(matchMember);
+  const methods = doc.methods.filter(matchMember);
+  const maxMethods =
+    options?.maxMethods ?? (memberQuery ? Math.min(200, Math.max(methods.length, 40)) : 120);
+
   const lines: string[] = [];
 
   lines.push(`# ${doc.title}`);
@@ -239,29 +259,52 @@ export function formatClassDoc(
   lines.push(`URL: ${doc.url}`);
   if (doc.signature) lines.push(`\nSignature: \`${doc.signature}\``);
   if (doc.description) lines.push(`\n${doc.description}`);
+  if (memberQuery) {
+    lines.push(
+      `\nMember filter: \`${memberQuery}\` → ${fields.length} fields, ${methods.length} methods`
+    );
+  }
 
   if (includeEnums && doc.enumConstants.length) {
     lines.push(`\n## Enum constants (${doc.enumConstants.length})`);
     lines.push(doc.enumConstants.join(", "));
   } else if (doc.enumConstants.length) {
     lines.push(
-      `\n## Enum constants: ${doc.enumConstants.length} values (truncated). Use paper_lookup_enum / paper_lookup_material to search.`
+      `\n## Enum constants: ${doc.enumConstants.length} values (truncated). Use mc_lookup_enum / mc_lookup_material to search.`
     );
     lines.push(doc.enumConstants.slice(0, 40).join(", ") + ", …");
   }
 
-  if (doc.fields.length) {
-    lines.push(`\n## Fields (${doc.fields.length})`);
-    for (const f of doc.fields.slice(0, 60)) {
+  if (fields.length) {
+    lines.push(`\n## Fields (${fields.length}${memberQuery ? " matched" : ` / ${doc.fields.length}`})`);
+    for (const f of fields.slice(0, 80)) {
       lines.push(`- \`${f.signature}\`${f.description ? ` — ${f.description}` : ""}`);
     }
   }
 
-  if (doc.methods.length) {
-    lines.push(`\n## Methods (showing ${Math.min(maxMethods, doc.methods.length)} of ${doc.methods.length})`);
-    for (const m of doc.methods.slice(0, maxMethods)) {
+  if (methods.length) {
+    const shown = Math.min(maxMethods, methods.length);
+    lines.push(
+      `\n## Methods (showing ${shown} of ${methods.length}${memberQuery ? " matched" : `; class has ${doc.methods.length}`})`
+    );
+    for (const m of methods.slice(0, maxMethods)) {
       lines.push(`- \`${m.signature}\`${m.description ? ` — ${m.description}` : ""}`);
     }
+    if (!memberQuery && doc.methods.length > maxMethods) {
+      lines.push(
+        `\n… ${doc.methods.length - maxMethods} more methods omitted. ` +
+          `Pass memberQuery (e.g. \`isFixedTime\`, \`setTime\`) or raise maxMethods — large types like World hide late members at the default limit.`
+      );
+    }
+    if (memberQuery && methods.length === 0) {
+      lines.push(
+        `\nNo members matched \`${memberQuery}\`. Try mc_search_api on the same string, or mc_explain_error if this came from an exception message.`
+      );
+    }
+  } else if (memberQuery) {
+    lines.push(
+      `\n## Methods\nNo members matched \`${memberQuery}\`. Try mc_search_api or a shorter memberQuery.`
+    );
   }
 
   if (doc.nestedTypes.length) {

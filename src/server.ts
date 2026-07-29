@@ -20,9 +20,12 @@ import {
   commandsGuidanceMarkdown,
   foliaGuidanceMarkdown,
   nmsDocMarkdown,
+  paper26GuidanceMarkdown,
   purpurGuidanceMarkdown,
   velocityGuidanceMarkdown,
 } from "./guidance.js";
+import { explainRuntimeError } from "./hints/runtime.js";
+import { findProjectRoot } from "./projectRoot.js";
 import {
   listFoliaVersionsWithJavadoc,
   resolveFoliaJavadocVersion,
@@ -95,10 +98,13 @@ async function requireVersion(
   version?: string,
   platform?: Platform
 ) {
-  if (projectRoot) {
-    const config = await loadProjectConfig(projectRoot);
+  const discovered = await findProjectRoot(projectRoot);
+  const root = discovered?.root;
+
+  if (root) {
+    const config = await loadProjectConfig(root);
     if (config?.paperVersion || config?.velocityVersion) {
-      const resolved = await resolveVersion(projectRoot, undefined, platform);
+      const resolved = await resolveVersion(root, undefined, platform);
       if (resolved.source === "missing" || !resolved.version) {
         return errorText(ASK_USER_FOR_VERSION);
       }
@@ -108,7 +114,7 @@ async function requireVersion(
           normalizeGameVersion(resolved.version).version
       ) {
         return errorText(
-          `Project is pinned to ${resolved.platform} ${resolved.version}. ` +
+          `Project is pinned to ${resolved.platform} ${resolved.version} (${CONFIG_FILENAME} in ${root}). ` +
             `Do not switch to invented "${version}". If the user wants a different version, ask them, then mc_set_version with versionSource=user_stated.`
         );
       }
@@ -117,6 +123,8 @@ async function requireVersion(
         platform: resolved.platform,
         config: resolved.config,
         warning: resolved.warning,
+        projectRoot: root,
+        pinSource: discovered?.source,
       };
     }
   }
@@ -307,14 +315,22 @@ export function createServer(): McpServer {
 
   server.tool(
     "mc_get_config",
-    "Read pinned project config (.mc-sdk.json). If missing, ask the user for version — do not invent one.",
-    { projectRoot: z.string() },
+    "Read pinned project config (.mc-sdk.json). Uses projectRoot or walks cwd parents. If missing, ask the user for version — do not invent one.",
+    { projectRoot: z.string().optional() },
     async ({ projectRoot }) => {
-      const config = await loadProjectConfig(projectRoot);
+      const discovered = await findProjectRoot(projectRoot);
+      if (!discovered) {
+        return errorText(ASK_USER_FOR_VERSION);
+      }
+      const config = await loadProjectConfig(discovered.root);
       if (!config) {
         return errorText(ASK_USER_FOR_VERSION);
       }
-      return text(config);
+      return text({
+        ...config,
+        projectRoot: discovered.root,
+        pinSource: discovered.source,
+      });
     }
   );
 
@@ -489,12 +505,30 @@ export function createServer(): McpServer {
           limit,
           platform: v.platform,
         });
+        const runtimeHints = explainRuntimeError(query, 3);
+        const empty =
+          results.types.length + results.members.length + results.packages.length === 0;
         return text({
           platform: v.platform,
           version: v.version,
           javadocVersion: jdVer || "root",
+          projectRoot: "projectRoot" in v ? v.projectRoot : undefined,
+          pinSource: "pinSource" in v ? v.pinSource : undefined,
           query,
           ...results,
+          ...(runtimeHints.matches.length
+            ? {
+                runtimeHints: runtimeHints.matches,
+                runtimeHintsNote:
+                  empty
+                    ? "Javadoc index had no hits; curated runtimeHints may apply (exception text is not indexed)."
+                    : "Also matched curated runtimeHints — useful for exception-like queries.",
+              }
+            : empty
+              ? {
+                  tip: "Empty JD search. If this is a stack trace / exception message, call mc_explain_error. For World time on 26.x: mc_paper26_guide + mc_get_class memberQuery=isFixedTime.",
+                }
+              : {}),
         });
       } catch (e) {
         return errorText(e instanceof Error ? e.message : String(e));
@@ -504,7 +538,7 @@ export function createServer(): McpServer {
 
   server.tool(
     "mc_get_class",
-    "Fetch API class/interface/enum summary from Paper, Folia, Purpur, or Velocity Javadocs.",
+    "Fetch API class summary from Paper/Folia/Purpur/Velocity Javadocs. For huge types (World), pass memberQuery (e.g. isFixedTime, setTime) — default listing truncates.",
     {
       className: z.string(),
       packageName: z.string().optional(),
@@ -512,7 +546,13 @@ export function createServer(): McpServer {
       version: z.string().optional(),
       platform: platformEnum.optional(),
       includeAllEnumConstants: z.boolean().optional(),
-      maxMethods: z.number().int().min(10).max(400).optional(),
+      maxMethods: z.number().int().min(10).max(800).optional(),
+      memberQuery: z
+        .string()
+        .optional()
+        .describe(
+          "Filter members by name/signature/description (e.g. isFixedTime, setTime, world clock). Preferred for World and other large classes."
+        ),
     },
     async (args) => {
       const v = await requireVersion(args.projectRoot, args.version, args.platform);
@@ -528,6 +568,7 @@ export function createServer(): McpServer {
           formatClassDoc(doc, {
             includeEnumConstants: args.includeAllEnumConstants,
             maxMethods: args.maxMethods,
+            memberQuery: args.memberQuery,
           })
         );
       } catch (e) {
@@ -801,6 +842,25 @@ export function createServer(): McpServer {
   );
 
   server.tool(
+    "mc_paper26_guide",
+    "Paper/Purpur 26.x breakages: world clock, setTime/isFixedTime, gamerules, spawn notes. Use with mc_explain_error for exception text.",
+    {},
+    async () => text(await paper26GuidanceMarkdown())
+  );
+
+  server.tool(
+    "mc_explain_error",
+    "Map Paper/Purpur runtime exception text (e.g. Cannot set time without a world clock) to API guidance. Javadoc search does not index exception strings.",
+    {
+      errorText: z
+        .string()
+        .describe("Full exception message or fragment from server log / stack trace"),
+      limit: z.number().int().min(1).max(10).optional(),
+    },
+    async ({ errorText: err, limit }) => text(explainRuntimeError(err, limit ?? 5))
+  );
+
+  server.tool(
     "mc_folia_guide",
     "Folia region-threading guidance and checklist (docs/folia.md).",
     {},
@@ -845,6 +905,8 @@ export function createServer(): McpServer {
           "mc_resolve_dependency",
           "mc_scaffold_project",
           "mc_validate_build_gradle",
+          "mc_paper26_guide",
+          "mc_explain_error",
         ],
         note: "If sdkPackageVersion is stale or toolsHighlight tools are missing from GetMcpTools, kill duplicate node MCP processes and toggle the server Off→On (full Cursor restart if needed).",
       });
@@ -1308,12 +1370,12 @@ Alias: \`1.26.2\` → \`26.2\` (with warning). Prefer \`mc_resolve_dependency\` 
 - Version: mc_set_version, mc_get_config, mc_detect_version, mc_list_versions, mc_paper_builds, mc_resolve_dependency
 - Paper/Folia API: mc_search_api, mc_get_class, mc_lookup_*, mc_find_event, mc_diff_api
 - Velocity: mc_velocity_list_versions, mc_velocity_search_api, mc_velocity_get_class, mc_velocity_guide
-- Docs: mc_docs_search, mc_docs_get, mc_adventure_guide, mc_adventure_search, mc_folia_guide, mc_async_guide, mc_commands_guide, mc_purpur_guide
+- Docs: mc_docs_search, mc_docs_get, mc_adventure_guide, mc_adventure_search, mc_paper26_guide, mc_explain_error, mc_folia_guide, mc_async_guide, mc_commands_guide, mc_purpur_guide
 - Build / API vs NMS: mc_build_guidance, mc_api_vs_nms
 - Project: mc_scaffold_project, mc_validate_build_gradle, mc_validate_plugin_yml, mc_template, mc_hangar_search, mc_cache_stats, mc_cache_clear
 - NMS: mc_nms_guidance, mc_nms_search, mc_nms_class, mc_remapper_guidance
 
-In-repo Markdown: docs/adventure.md, docs/api-vs-nms.md, docs/async.md, docs/build-guidance.md, docs/commands.md, docs/folia.md, docs/nms.md, docs/purpur.md, docs/velocity.md
+In-repo Markdown: docs/adventure.md, docs/api-vs-nms.md, docs/async.md, docs/build-guidance.md, docs/commands.md, docs/folia.md, docs/nms.md, docs/paper-26.md, docs/purpur.md, docs/velocity.md
 `,
         },
       ],
@@ -1476,6 +1538,24 @@ In-repo Markdown: docs/adventure.md, docs/api-vs-nms.md, docs/async.md, docs/bui
           uri: "minecraft://guides/adventure",
           mimeType: "text/markdown",
           text: await adventureGuidanceMarkdown(),
+        },
+      ],
+    })
+  );
+
+  server.resource(
+    "paper-26-guide",
+    "minecraft://guides/paper-26",
+    {
+      mimeType: "text/markdown",
+      description: "Paper/Purpur 26.x world clock and related breakages",
+    },
+    async () => ({
+      contents: [
+        {
+          uri: "minecraft://guides/paper-26",
+          mimeType: "text/markdown",
+          text: await paper26GuidanceMarkdown(),
         },
       ],
     })

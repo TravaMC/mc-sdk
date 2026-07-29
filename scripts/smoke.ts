@@ -66,6 +66,13 @@ async function main() {
     console.log("commands guide bytes:", (await commandsGuidanceMarkdown()).length);
     console.log("adventure guide bytes:", (await adventureGuidanceMarkdown()).length);
     console.log("velocity guide bytes:", (await velocityGuidanceMarkdown()).length);
+    const { paper26GuidanceMarkdown } = await import("../src/guidance.js");
+    console.log("paper26 guide bytes:", (await paper26GuidanceMarkdown()).length);
+    const { explainRuntimeError } = await import("../src/hints/runtime.js");
+    console.log(
+      "runtime hint:",
+      explainRuntimeError("Cannot set the time without a world clock").matches[0]?.id
+    );
 
     await saveProjectConfig(tmp, "1.21.1", { platform: "purpur" });
     const purpur = await searchApi("", "PlayerAFKEvent", {

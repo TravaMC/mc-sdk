@@ -47,7 +47,7 @@ npm link          # опционально — `mc-sdk` в PATH
 ```
 
 После правок кода: `npm run build`, затем перезапустите MCP (Off→On).  
-Проверка: `mc_cache_stats` → `sdkPackageVersion` (`3.0.3`+).
+Проверка: `mc_cache_stats` → `sdkPackageVersion` (`3.1.0`+).
 
 См. [`mcp.json.example`](mcp.json.example).
 
@@ -58,18 +58,21 @@ npm link          # опционально — `mc-sdk` в PATH
 | Версия | `mc_set_version`, `mc_get_config`, `mc_detect_version`, `mc_list_versions`, `mc_paper_builds`, **`mc_resolve_dependency`** |
 | Paper / Folia API | `mc_search_api`, `mc_get_class`, `mc_lookup_*`, `mc_find_event`, `mc_diff_api` |
 | Velocity | `mc_velocity_list_versions`, `mc_velocity_search_api`, `mc_velocity_get_class`, `mc_velocity_guide` |
-| Документация | `mc_docs_search`, `mc_docs_get`, **`mc_adventure_guide`**, `mc_adventure_search`, `mc_folia_guide`, **`mc_async_guide`**, `mc_commands_guide`, `mc_purpur_guide` |
+| Документация | `mc_docs_search`, `mc_docs_get`, **`mc_adventure_guide`**, `mc_adventure_search`, **`mc_paper26_guide`**, **`mc_explain_error`**, `mc_folia_guide`, **`mc_async_guide`**, `mc_commands_guide`, `mc_purpur_guide` |
 | **API vs NMS** | **`mc_api_vs_nms`**, `mc_build_guidance`, `mc_nms_guidance`, `mc_remapper_guidance` |
 | Проект | **`mc_scaffold_project`**, **`mc_validate_build_gradle`**, `mc_validate_plugin_yml`, `mc_template`, `mc_hangar_search`, `mc_cache_stats`, `mc_cache_clear` |
 | NMS lookup | `mc_nms_search`, `mc_nms_class` |
 
 **Совет для 26.x:** не выдумывайте `1.26.2-R0.1-SNAPSHOT` — вызывайте `mc_resolve_dependency`. Алиас `1.26.2` → `26.2` срабатывает автоматически с предупреждением. NMS на 26.1+: `nms: true`, `MOJANG_PRODUCTION`, без `reobfJar`.
 
-**Версия:** если пользователь не назвал Paper/MC версию и нет `.mc-sdk.json` — агент обязан спросить. `mc_set_version` / `mc_scaffold_project` требуют `versionSource=user_stated|user_confirmed_detection`; `mc_detect_version` с `pin=true` — только с `userConfirmedVersion`.
+**Версия:** если пользователь не назвал Paper/MC версию и нет `.mc-sdk.json` — агент обязан спросить. Уже есть pin → передайте `projectRoot` или запустите MCP из корня проекта (авто-поиск `.mc-sdk.json` вверх от cwd). `mc_set_version` / `mc_scaffold_project` требуют `versionSource=user_stated|user_confirmed_detection`.
+
+**26.x / World:** для `isFixedTime` / `setTime` используйте `mc_get_class` с `memberQuery` (дефолтный listing обрезает огромные классы). Тексты исключений — `mc_explain_error` / `mc_paper26_guide`.
 
 ## Руководства
 
 - [docs/adventure.md](docs/adventure.md) — Adventure Component (Paper + Velocity; без Bungee legacy)  
+- [docs/paper-26.md](docs/paper-26.md) — world clock / `setTime` / gamerules на 26.x  
 - [docs/async.md](docs/async.md) — главный поток vs async  
 - [docs/commands.md](docs/commands.md) — classic vs Brigadier  
 - [docs/purpur.md](docs/purpur.md) — API только Purpur  

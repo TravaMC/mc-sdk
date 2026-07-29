@@ -25,6 +25,7 @@ Human- and agent-facing guides live under [`docs/`](docs/). MCP tools load them 
 | `docs/commands.md` | `mc_commands_guide` |
 | `docs/velocity.md` | `mc_velocity_guide` |
 | `docs/adventure.md` | `mc_adventure_guide` |
+| `docs/paper-26.md` | `mc_paper26_guide` |
 
 Edit the Markdown first, then smoke-test the matching tool.
 

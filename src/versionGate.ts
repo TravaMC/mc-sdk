@@ -22,12 +22,13 @@ export const ASK_USER_FOR_VERSION =
   "Ask the user which platform and version to target (e.g. Paper 26.2, Paper 1.21.1, Velocity 3.4.0). " +
   "Only after they answer: call mc_set_version with versionSource=user_stated. " +
   "If build files exist, you may run mc_detect_version (without pin), show results, and pin only after they confirm " +
-  "(versionSource=user_confirmed_detection or pin with userConfirmedVersion).";
+  "(versionSource=user_confirmed_detection or pin with userConfirmedVersion). " +
+  "If `.mc-sdk.json` already exists: pass projectRoot (or run the MCP with cwd inside that project) — the pin is used automatically; do not ask again.";
 
 export const SERVER_INSTRUCTIONS = `mc-sdk — Minecraft plugin MCP.
 
 HARD RULE — version must come from the user (or their confirmed detection), never from the model:
-1. If .mc-sdk.json already pins a version, use that pin (mc_get_config). Do not silently change it.
+1. If .mc-sdk.json already pins a version, use that pin silently (pass projectRoot, or rely on cwd auto-detect). Do not ask again and do not invent another version.
 2. If there is no pin and the user has not stated a version in this chat: ASK them. Do not call mc_set_version / mc_scaffold_project with a guessed version.
 3. Optional mc_detect_version is OK to propose candidates, but never pin=true until the user confirms the exact version string.
 4. Never invent Gradle coords or API members for an assumed version — pin first, then look up.
@@ -36,7 +37,11 @@ TEXT / UI — Adventure only (Paper and Velocity, including LimboAPI):
 - Use Component / Audience / MiniMessage. Read mc_adventure_guide (and mc_velocity_guide on proxy).
 - Do not use net.md_5.bungee.api.chat.* or ChatColor/§ as the primary API.
 
-Workflow: ask/confirm version → mc_set_version → mc_resolve_dependency / mc_search_api.`;
+26.x / large classes:
+- World time: mc_paper26_guide + mc_get_class memberQuery=isFixedTime|setTime. Exception text: mc_explain_error.
+- Default mc_get_class truncates huge types — always pass memberQuery for the member you need.
+
+Workflow: ask/confirm version (or use existing pin) → mc_set_version if needed → mc_resolve_dependency / mc_search_api.`;
 
 /** When auto-pinning detection, require an exact user-confirmed version string. */
 export function matchConfirmedDetection<T extends { version: string }>(

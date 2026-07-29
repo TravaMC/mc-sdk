@@ -212,6 +212,65 @@ describe("adventure guide", () => {
   });
 });
 
+describe("runtime hints / paper 26", () => {
+  it("explains world-clock setTime errors", async () => {
+    const { explainRuntimeError } = await import("../src/hints/runtime.js");
+    const r = explainRuntimeError(
+      "java.lang.IllegalStateException: Cannot set the time without a world clock"
+    );
+    assert.ok(r.matches.length >= 1);
+    assert.match(r.matches[0].title, /world clock/i);
+    assert.ok(r.matches[0].lookUp.some((x) => x.includes("isFixedTime")));
+  });
+
+  it("paper26 guide mentions isFixedTime", async () => {
+    const { paper26GuidanceMarkdown } = await import("../src/guidance.js");
+    const md = await paper26GuidanceMarkdown();
+    assert.match(md, /isFixedTime/);
+    assert.match(md, /setTime/);
+  });
+});
+
+describe("formatClassDoc memberQuery", () => {
+  it("surfaces late World members via memberQuery", async () => {
+    const { formatClassDoc } = await import("../src/javadoc/parse.js");
+    const fake = {
+      version: "26.2",
+      platform: "paper" as const,
+      title: "Interface World",
+      packageName: "org.bukkit",
+      url: "https://example.invalid/World.html",
+      description: "A world",
+      enumConstants: [] as string[],
+      fields: [] as { name: string; signature: string; description: string }[],
+      methods: [
+        ...Array.from({ length: 100 }, (_, i) => ({
+          name: `early${i}`,
+          signature: `void early${i}()`,
+          description: "",
+        })),
+        {
+          name: "isFixedTime",
+          signature: "boolean isFixedTime()",
+          description: "Checks if this world has a fixed time",
+        },
+        {
+          name: "setTime",
+          signature: "void setTime(long time)",
+          description: "Sets the relative in-game time",
+        },
+      ],
+      nestedTypes: [] as string[],
+    };
+    const truncated = formatClassDoc(fake, { maxMethods: 80 });
+    assert.equal(truncated.includes("boolean isFixedTime()"), false);
+    assert.match(truncated, /more methods omitted/i);
+    const filtered = formatClassDoc(fake, { memberQuery: "isFixedTime" });
+    assert.match(filtered, /boolean isFixedTime\(\)/);
+    assert.match(filtered, /fixed time/i);
+  });
+});
+
 describe("templates", () => {
   it("renders async_io, async_cpu, async_secure, folia_region_task, purpur_build", async () => {
     const { renderTemplate } = await import("../src/templates.js");

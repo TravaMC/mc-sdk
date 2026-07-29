@@ -85,3 +85,11 @@ export async function nmsDocMarkdown(mcVersion?: string): Promise<string> {
   if (!mcVersion) return body;
   return `${body}\n\n---\n\nPinned Minecraft hint for templates: \`${mcVersion}\`\n`;
 }
+
+/** Paper/Purpur 26.x world clock and related breakages. */
+export async function paper26GuidanceMarkdown(): Promise<string> {
+  return readDoc(
+    "paper-26.md",
+    "# Paper 26.x\n\nWorld clock / setTime breakages. See docs/paper-26.md.\n"
+  );
+}
