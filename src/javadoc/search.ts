@@ -1,11 +1,26 @@
 import { fetchText } from "../cache.js";
 import { javadocBaseUrlFor, type Platform } from "../platform.js";
+import {
+  annotationWarnings,
+  curatedAnnotation,
+  mergeAnnotations,
+  parseDeprecationMeta,
+  type TypeAnnotation,
+} from "./deprecation.js";
 
 export interface TypeHit {
   package?: string;
   name: string;
   kind?: string;
   url: string;
+  deprecated?: boolean;
+  experimental?: boolean;
+  forRemoval?: boolean;
+  since?: string;
+  prefer?: string;
+  replacement?: string;
+  usageNote?: string;
+  warning?: string;
 }
 
 export interface MemberHit {
@@ -147,14 +162,24 @@ export async function searchApi(
     limit?: number;
     scope?: "all" | "types" | "members" | "packages";
     platform?: Platform;
+    /** include = keep all (default); exclude = drop deprecated types; only = deprecated only */
+    deprecated?: "include" | "exclude" | "only";
+    /** Fetch JD deprecation blocks for top Event hits (cached). Default true when query looks event-like. */
+    enrichAnnotations?: boolean;
   }
-): Promise<{ types: TypeHit[]; members: MemberHit[]; packages: string[] }> {
+): Promise<{
+  types: TypeHit[];
+  members: MemberHit[];
+  packages: string[];
+  warnings: string[];
+}> {
   const limit = options?.limit ?? 25;
   const scope = options?.scope ?? "all";
   const platform = options?.platform ?? "paper";
+  const deprecatedMode = options?.deprecated ?? "include";
   const indexes = await loadSearchIndexes(version, platform);
   const q = query.trim();
-  if (!q) return { types: [], members: [], packages: [] };
+  if (!q) return { types: [], members: [], packages: [], warnings: [] };
 
   const types: Array<TypeHit & { score: number }> = [];
   const members: Array<MemberHit & { score: number }> = [];
@@ -164,12 +189,14 @@ export async function searchApi(
     for (const t of indexes.types) {
       const score = Math.max(scoreMatch(q, t.l), scoreMatch(q, `${t.p ?? ""}.${t.l}`));
       if (score > 0) {
+        const curated = curatedAnnotation(t.l, t.p);
         types.push({
           package: t.p,
           name: t.l,
           kind: t.k,
           url: typeUrl(version, t, platform),
-          score,
+          score: score + annotationScoreBoost(curated, t.p),
+          ...flattenAnnotation(curated),
         });
       }
     }
@@ -199,15 +226,146 @@ export async function searchApi(
     }
   }
 
-  types.sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
+  types.sort(
+    (a, b) =>
+      Number(Boolean(a.deprecated)) - Number(Boolean(b.deprecated)) ||
+      b.score - a.score ||
+      a.name.localeCompare(b.name)
+  );
   members.sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
   packages.sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
 
+  let typed = types.slice(0, Math.max(limit * 2, limit));
+
+  const shouldEnrich =
+    options?.enrichAnnotations ??
+    (/\bevent\b/i.test(q) ||
+      /SpawnLocation|PlayerJoin|AsyncPlayer/i.test(q) ||
+      typed.some((t) => t.name.endsWith("Event")));
+
+  if (shouldEnrich && (scope === "all" || scope === "types")) {
+    typed = await enrichTypeAnnotations(version, platform, typed.slice(0, 12));
+    typed.sort(
+      (a, b) =>
+        Number(Boolean(a.deprecated)) - Number(Boolean(b.deprecated)) ||
+        b.score - a.score ||
+        a.name.localeCompare(b.name)
+    );
+  }
+
+  if (deprecatedMode === "exclude") {
+    typed = typed.filter((t) => !t.deprecated);
+  } else if (deprecatedMode === "only") {
+    typed = typed.filter((t) => t.deprecated);
+  }
+
+  const finalTypes = typed.slice(0, limit).map(({ score: _s, ...rest }) => rest);
+  const warnings = finalTypes.flatMap((t) =>
+    annotationWarnings(
+      {
+        deprecated: t.deprecated,
+        experimental: t.experimental,
+        forRemoval: t.forRemoval,
+        since: t.since,
+        prefer: t.prefer,
+        replacement: t.replacement,
+        warning: t.warning,
+        usageNote: t.usageNote,
+      },
+      t.name
+    )
+  );
+
   return {
-    types: types.slice(0, limit).map(({ score: _s, ...rest }) => rest),
+    types: finalTypes,
     members: members.slice(0, limit).map(({ score: _s, ...rest }) => rest),
     packages: packages.slice(0, limit).map((p) => p.name),
+    warnings: [...new Set(warnings)],
   };
+}
+
+function flattenAnnotation(ann?: TypeAnnotation): Partial<TypeHit> {
+  if (!ann || !Object.keys(ann).length) return {};
+  return {
+    deprecated: ann.deprecated,
+    experimental: ann.experimental,
+    forRemoval: ann.forRemoval,
+    since: ann.since,
+    prefer: ann.prefer,
+    replacement: ann.replacement,
+    usageNote: ann.usageNote,
+    warning: ann.warning,
+  };
+}
+
+function annotationScoreBoost(ann: TypeAnnotation | undefined, pkg?: string): number {
+  let boost = 0;
+  if (ann?.deprecated) boost -= 120;
+  if (ann?.prefer) boost -= 20;
+  if (pkg?.startsWith("io.papermc")) boost += 15;
+  if (pkg?.startsWith("org.spigotmc")) boost -= 10;
+  return boost;
+}
+
+async function enrichTypeAnnotations(
+  version: string,
+  platform: Platform,
+  hits: Array<TypeHit & { score: number }>
+): Promise<Array<TypeHit & { score: number }>> {
+  const out: Array<TypeHit & { score: number }> = [];
+  for (const hit of hits) {
+    if (hit.deprecated || hit.prefer || !hit.name.endsWith("Event")) {
+      out.push(hit);
+      continue;
+    }
+    try {
+      const html = await fetchText(hit.url, {
+        cacheKey: `jd:${platform}:${version || "root"}:page:${hit.package ?? ""}:${hit.name}`,
+        ttlMs: 24 * 60 * 60 * 1000,
+      });
+      const sig =
+        html.match(/class="type-signature"[^>]*>([\s\S]*?)<\/div>/i)?.[1]?.replace(
+          /<[^>]+>/g,
+          " "
+        ) ||
+        html.match(/@Deprecated[\s\S]{0,180}?class\s+\w+/)?.[0] ||
+        "";
+      const block =
+        html.match(
+          /class="deprecation-block"[^>]*>([\s\S]*?)<\/div>\s*<div class="description"/i
+        )?.[1]?.replace(/<[^>]+>/g, " ") ||
+        html.match(
+          /class="deprecation-comment"[^>]*>([\s\S]*?)<\/div>/i
+        )?.[1]?.replace(/<[^>]+>/g, " ") ||
+        "";
+      const parsed = parseDeprecationMeta(
+        sig.replace(/\s+/g, " ").trim(),
+        block.replace(/\s+/g, " ").trim()
+      );
+      const merged = mergeAnnotations(
+        curatedAnnotation(hit.name, hit.package),
+        parsed,
+        {
+          deprecated: hit.deprecated,
+          experimental: hit.experimental,
+          forRemoval: hit.forRemoval,
+          since: hit.since,
+          prefer: hit.prefer,
+          replacement: hit.replacement,
+          warning: hit.warning,
+          usageNote: hit.usageNote,
+        }
+      );
+      out.push({
+        ...hit,
+        ...flattenAnnotation(merged),
+        score: hit.score + annotationScoreBoost(merged, hit.package),
+      });
+    } catch {
+      out.push(hit);
+    }
+  }
+  return out;
 }
 
 export async function findType(

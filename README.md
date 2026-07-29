@@ -47,7 +47,7 @@ npm link          # опционально — `mc-sdk` в PATH
 ```
 
 После правок кода: `npm run build`, затем перезапустите MCP (Off→On).  
-Проверка: `mc_cache_stats` → `sdkPackageVersion` (`3.1.0`+).
+Проверка: `mc_cache_stats` → `sdkPackageVersion` (`3.1.1`+).
 
 См. [`mcp.json.example`](mcp.json.example).
 
@@ -68,6 +68,8 @@ npm link          # опционально — `mc-sdk` в PATH
 **Версия:** если пользователь не назвал Paper/MC версию и нет `.mc-sdk.json` — агент обязан спросить. Уже есть pin → передайте `projectRoot` или запустите MCP из корня проекта (авто-поиск `.mc-sdk.json` вверх от cwd). `mc_set_version` / `mc_scaffold_project` требуют `versionSource=user_stated|user_confirmed_detection`.
 
 **26.x / World:** для `isFixedTime` / `setTime` используйте `mc_get_class` с `memberQuery` (дефолтный listing обрезает огромные классы). Тексты исключений — `mc_explain_error` / `mc_paper26_guide`.
+
+**События:** в `mc_search_api` / `mc_find_event` смотрите `deprecated`, `prefer`, `warnings[]` (например Spigot `PlayerSpawnLocationEvent` → Paper `AsyncPlayerSpawnLocationEvent`). Фильтр: `deprecated=exclude`.
 
 ## Руководства
 

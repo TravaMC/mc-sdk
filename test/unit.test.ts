@@ -231,6 +231,74 @@ describe("runtime hints / paper 26", () => {
   });
 });
 
+describe("deprecation annotations", () => {
+  it("flags PlayerSpawnLocationEvent and prefers Async", async () => {
+    const { curatedAnnotation, parseDeprecationMeta } = await import(
+      "../src/javadoc/deprecation.js"
+    );
+    const c = curatedAnnotation(
+      "PlayerSpawnLocationEvent",
+      "org.spigotmc.event.player"
+    );
+    assert.equal(c?.deprecated, true);
+    assert.equal(c?.prefer, "AsyncPlayerSpawnLocationEvent");
+    const parsed = parseDeprecationMeta(
+      '@Deprecated(since="1.21.9", forRemoval=true) public class PlayerSpawnLocationEvent',
+      "Prefer using AsyncPlayerSpawnLocationEvent."
+    );
+    assert.equal(parsed.deprecated, true);
+    assert.equal(parsed.forRemoval, true);
+    assert.equal(parsed.prefer, "AsyncPlayerSpawnLocationEvent");
+  });
+
+  it("search demotes deprecated spawn event and fills warnings", async () => {
+    const { searchApi } = await import("../src/javadoc/search.js");
+    const r = await searchApi("26.2", "PlayerSpawnLocationEvent", {
+      platform: "paper",
+      scope: "types",
+      limit: 5,
+      enrichAnnotations: true,
+    });
+    assert.ok(r.types.some((t) => t.name === "AsyncPlayerSpawnLocationEvent"));
+    const legacy = r.types.find((t) => t.name === "PlayerSpawnLocationEvent");
+    assert.equal(legacy?.deprecated, true);
+    assert.equal(legacy?.prefer, "AsyncPlayerSpawnLocationEvent");
+    assert.ok(r.warnings.some((w) => /AsyncPlayerSpawnLocationEvent/i.test(w)));
+    assert.equal(r.types[0]?.name === "PlayerSpawnLocationEvent", false);
+  });
+
+  it("formatClassDoc puts DEPRECATED first", async () => {
+    const { formatClassDoc } = await import("../src/javadoc/parse.js");
+    const text = formatClassDoc({
+      version: "26.2",
+      platform: "paper",
+      title: "Class PlayerSpawnLocationEvent",
+      packageName: "org.spigotmc.event.player",
+      url: "https://example.invalid/PlayerSpawnLocationEvent.html",
+      description: "Called when player is about to spawn",
+      signature:
+        '@Deprecated(since="1.21.9", forRemoval=true) public class PlayerSpawnLocationEvent',
+      annotation: {
+        deprecated: true,
+        forRemoval: true,
+        since: "1.21.9",
+        prefer: "AsyncPlayerSpawnLocationEvent",
+        usageNote: "Prefer AsyncPlayerSpawnLocationEvent",
+      },
+      deprecationWarning:
+        "Prefer using AsyncPlayerSpawnLocationEvent.",
+      enumConstants: [],
+      fields: [],
+      methods: [],
+      nestedTypes: [],
+    });
+    const depIdx = text.indexOf("DEPRECATED");
+    const descIdx = text.indexOf("Called when player");
+    assert.ok(depIdx >= 0 && depIdx < descIdx);
+    assert.match(text, /prefer AsyncPlayerSpawnLocationEvent/i);
+  });
+});
+
 describe("formatClassDoc memberQuery", () => {
   it("surfaces late World members via memberQuery", async () => {
     const { formatClassDoc } = await import("../src/javadoc/parse.js");
@@ -241,6 +309,7 @@ describe("formatClassDoc memberQuery", () => {
       packageName: "org.bukkit",
       url: "https://example.invalid/World.html",
       description: "A world",
+      annotation: {},
       enumConstants: [] as string[],
       fields: [] as { name: string; signature: string; description: string }[],
       methods: [

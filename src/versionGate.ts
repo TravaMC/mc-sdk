@@ -40,6 +40,7 @@ TEXT / UI — Adventure only (Paper and Velocity, including LimboAPI):
 26.x / large classes:
 - World time: mc_paper26_guide + mc_get_class memberQuery=isFixedTime|setTime. Exception text: mc_explain_error.
 - Default mc_get_class truncates huge types — always pass memberQuery for the member you need.
+- Events: read deprecated/prefer/warnings from mc_search_api / mc_find_event (e.g. AsyncPlayerSpawnLocationEvent over Spigot PlayerSpawnLocationEvent). Never pick a deprecated Spigot event when prefer is set.
 
 Workflow: ask/confirm version (or use existing pin) → mc_set_version if needed → mc_resolve_dependency / mc_search_api.`;
 

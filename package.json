@@ -1,6 +1,6 @@
 {
   "name": "mc-sdk",
-  "version": "3.1.0",
+  "version": "3.1.1",
   "description": "MCP server for Paper, Folia, Purpur, and Velocity plugin development — versioned Javadocs, docs, NMS mappings, Hangar, templates",
   "license": "MIT",
   "author": "mc-sdk contributors",

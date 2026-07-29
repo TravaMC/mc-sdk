@@ -486,7 +486,7 @@ export function createServer(): McpServer {
   // —— API javadoc ——
   server.tool(
     "mc_search_api",
-    "Search Paper, Folia, Purpur, or Velocity Javadocs (types/members/packages).",
+    "Search Paper/Folia/Purpur/Velocity Javadocs. Event hits include deprecated/prefer/usageNote; warnings[] lists traps (e.g. prefer AsyncPlayerSpawnLocationEvent).",
     {
       query: z.string(),
       projectRoot: z.string().optional(),
@@ -494,8 +494,14 @@ export function createServer(): McpServer {
       platform: platformEnum.optional(),
       scope: z.enum(["all", "types", "members", "packages"]).optional(),
       limit: z.number().int().min(1).max(100).optional(),
+      deprecated: z
+        .enum(["include", "exclude", "only"])
+        .optional()
+        .describe(
+          "Type filter: include (default, non-deprecated sorted first), exclude deprecated types, or only deprecated"
+        ),
     },
-    async ({ query, projectRoot, version, platform, scope, limit }) => {
+    async ({ query, projectRoot, version, platform, scope, limit, deprecated }) => {
       const v = await requireVersion(projectRoot, version, platform);
       if ("isError" in v) return v;
       try {
@@ -504,6 +510,8 @@ export function createServer(): McpServer {
           scope,
           limit,
           platform: v.platform,
+          deprecated,
+          enrichAnnotations: true,
         });
         const runtimeHints = explainRuntimeError(query, 3);
         const empty =
@@ -515,6 +523,7 @@ export function createServer(): McpServer {
           projectRoot: "projectRoot" in v ? v.projectRoot : undefined,
           pinSource: "pinSource" in v ? v.pinSource : undefined,
           query,
+          deprecatedMode: deprecated ?? "include",
           ...results,
           ...(runtimeHints.matches.length
             ? {
@@ -538,7 +547,7 @@ export function createServer(): McpServer {
 
   server.tool(
     "mc_get_class",
-    "Fetch API class summary from Paper/Folia/Purpur/Velocity Javadocs. For huge types (World), pass memberQuery (e.g. isFixedTime, setTime) — default listing truncates.",
+    "Fetch API class summary. @Deprecated / prefer / usageNote are shown first when present. For huge types (World), pass memberQuery.",
     {
       className: z.string(),
       packageName: z.string().optional(),
@@ -748,7 +757,7 @@ export function createServer(): McpServer {
 
   server.tool(
     "mc_find_event",
-    "Find Bukkit/Paper event classes for a natural-language scenario (click block, death, chat, …).",
+    "Find Bukkit/Paper event classes for a scenario. Prefers Paper/async events; surfaces deprecated + prefer (e.g. AsyncPlayerSpawnLocationEvent over Spigot PlayerSpawnLocationEvent).",
     {
       scenario: z.string(),
       projectRoot: z.string().optional(),

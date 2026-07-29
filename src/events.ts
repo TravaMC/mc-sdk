@@ -1,13 +1,29 @@
-import { searchApi } from "./javadoc/search.js";
+import { searchApi, type TypeHit } from "./javadoc/search.js";
+import {
+  annotationWarnings,
+  curatedAnnotation,
+} from "./javadoc/deprecation.js";
 
 const SCENARIO_HINTS: Array<{ keywords: string[]; typeHints: string[] }> = [
   {
     keywords: ["click", "interact", "right", "left", "air"],
-    typeHints: ["PlayerInteractEvent", "PlayerInteractEntityEvent", "PlayerInteractAtEntityEvent"],
+    typeHints: [
+      "PlayerInteractEvent",
+      "PlayerInteractEntityEvent",
+      "PlayerInteractAtEntityEvent",
+    ],
   },
   {
     keywords: ["chat", "message", "say"],
-    typeHints: ["AsyncPlayerChatEvent", "AsyncChatEvent", "PlayerChatEvent"],
+    typeHints: ["AsyncChatEvent", "AsyncPlayerChatEvent", "PlayerChatEvent"],
+  },
+  {
+    keywords: ["spawn", "join spawn", "spawn location", "first join"],
+    typeHints: [
+      "AsyncPlayerSpawnLocationEvent",
+      "PlayerSpawnLocationEvent",
+      "PlayerJoinEvent",
+    ],
   },
   {
     keywords: ["join", "quit", "leave", "login"],
@@ -43,6 +59,22 @@ const SCENARIO_HINTS: Array<{ keywords: string[]; typeHints: string[] }> = [
   },
 ];
 
+function annotateEventHit(hit: TypeHit): TypeHit {
+  const curated = curatedAnnotation(hit.name, hit.package);
+  if (!curated) return hit;
+  return {
+    ...hit,
+    deprecated: hit.deprecated ?? curated.deprecated,
+    experimental: hit.experimental ?? curated.experimental,
+    forRemoval: hit.forRemoval ?? curated.forRemoval,
+    since: hit.since ?? curated.since,
+    prefer: hit.prefer ?? curated.prefer,
+    replacement: hit.replacement ?? curated.replacement,
+    usageNote: hit.usageNote ?? curated.usageNote,
+    warning: hit.warning ?? curated.warning,
+  };
+}
+
 export async function findEventsByScenario(
   version: string,
   scenario: string,
@@ -60,6 +92,7 @@ export async function findEventsByScenario(
   const results = await searchApi(version, searchQuery, {
     scope: "types",
     limit: 40,
+    enrichAnnotations: true,
   });
 
   const eventTypes = results.types.filter(
@@ -68,19 +101,41 @@ export async function findEventsByScenario(
       (t.package?.includes(".event") || t.name.includes("Event"))
   );
 
-  // Merge hints that appear in index
-  const extra = await searchApi(version, "Event", { scope: "types", limit: 80 });
-  for (const hint of hinted) {
+  // Merge hints that appear in index (prefer Paper/async names listed first in hints)
+  const extra = await searchApi(version, "Event", {
+    scope: "types",
+    limit: 80,
+    enrichAnnotations: false,
+  });
+  for (const hint of [...hinted].reverse()) {
     const hit = extra.types.find((t) => t.name === hint);
     if (hit && !eventTypes.some((e) => e.name === hit.name)) {
-      eventTypes.unshift(hit);
+      eventTypes.unshift(annotateEventHit(hit));
     }
   }
+
+  const events = eventTypes
+    .map(annotateEventHit)
+    .sort(
+      (a, b) =>
+        Number(Boolean(a.deprecated)) - Number(Boolean(b.deprecated)) ||
+        a.name.localeCompare(b.name)
+    )
+    .slice(0, limit);
+
+  const warnings = [
+    ...results.warnings,
+    ...events.flatMap((e) => annotationWarnings(e, e.name)),
+  ];
 
   return {
     version,
     scenario,
     hints: hinted,
-    events: eventTypes.slice(0, limit),
+    events,
+    warnings: [...new Set(warnings)],
+    tip: events.some((e) => e.deprecated)
+      ? "One or more matching events are @Deprecated — prefer the Paper/async replacement (see prefer / warnings)."
+      : undefined,
   };
 }

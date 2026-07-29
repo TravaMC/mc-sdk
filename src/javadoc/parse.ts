@@ -1,5 +1,11 @@
 import * as cheerio from "cheerio";
 import { fetchText } from "../cache.js";
+import {
+  curatedAnnotation,
+  mergeAnnotations,
+  parseDeprecationMeta,
+  type TypeAnnotation,
+} from "./deprecation.js";
 import { findType } from "./search.js";
 import { javadocBaseUrlFor, platformLabel, type Platform } from "../platform.js";
 
@@ -12,6 +18,9 @@ export interface ClassDoc {
   url: string;
   description: string;
   signature?: string;
+  /** Parsed + curated deprecation / experimental flags */
+  annotation: TypeAnnotation;
+  deprecationWarning?: string;
   enumConstants: string[];
   fields: DocMember[];
   methods: DocMember[];
@@ -69,10 +78,31 @@ export function parseClassHtml(version: string, url: string, html: string): Clas
 
   const signature = cleanText($(".type-signature").first().text()) || undefined;
 
+  const deprecationWarning =
+    cleanText(
+      $(".deprecation-block, div.deprecation-comment, .deprecation-comment")
+        .first()
+        .text()
+    ) || undefined;
+
   const description = cleanText(
     $(".description .block, .class-description .block, main .block")
       .first()
       .text()
+  );
+
+  const simpleName =
+    title.replace(/^(Class|Interface|Enum|Record)\s+/i, "").split(/[< ]/)[0] ||
+    "";
+  const pkgGuess = packageName || hitPackageFromUrl(url);
+  const annotation = mergeAnnotations(
+    parseDeprecationMeta(signature, deprecationWarning),
+    curatedAnnotation(simpleName, pkgGuess),
+    /preview|@ApiStatus\.Experimental/i.test(
+      cleanText($(".preview, .horizontal").first().text()) + (signature ?? "")
+    )
+      ? { experimental: true }
+      : undefined
   );
 
   const enumConstants: string[] = [];
@@ -139,6 +169,8 @@ export function parseClassHtml(version: string, url: string, html: string): Clas
     url,
     description,
     signature,
+    annotation,
+    deprecationWarning,
     enumConstants: unique(enumConstants).slice(0, 5000),
     fields: fields.slice(0, 500),
     methods: methods.slice(0, 2500),
@@ -254,6 +286,21 @@ export function formatClassDoc(
   const lines: string[] = [];
 
   lines.push(`# ${doc.title}`);
+  if (doc.annotation.deprecated || doc.deprecationWarning || doc.annotation.prefer) {
+    const bits: string[] = ["DEPRECATED"];
+    if (doc.annotation.forRemoval) bits.push("forRemoval");
+    if (doc.annotation.since) bits.push(`since ${doc.annotation.since}`);
+    if (doc.annotation.prefer) bits.push(`prefer ${doc.annotation.prefer}`);
+    lines.push(`\n⚠️ ${bits.join(" — ")}`);
+    const warn = doc.deprecationWarning || doc.annotation.warning;
+    if (warn) lines.push(warn);
+    if (doc.annotation.usageNote) lines.push(`Usage: ${doc.annotation.usageNote}`);
+  } else if (doc.annotation.experimental) {
+    lines.push(`\n⚠️ EXPERIMENTAL / preview API`);
+  } else if (doc.annotation.usageNote) {
+    lines.push(`\nUsage: ${doc.annotation.usageNote}`);
+  }
+
   lines.push(`Version: ${platformLabel(doc.platform ?? "paper")} ${doc.version || "latest"}`);
   if (doc.packageName) lines.push(`Package: ${doc.packageName}`);
   lines.push(`URL: ${doc.url}`);
