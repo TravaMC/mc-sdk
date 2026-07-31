@@ -25,7 +25,7 @@ import {
   velocityGuidanceMarkdown,
 } from "./guidance.js";
 import { explainRuntimeError } from "./hints/runtime.js";
-import { findProjectRoot } from "./projectRoot.js";
+import { findProjectRoot, resolveWritableProjectRoot } from "./projectRoot.js";
 import {
   listFoliaVersionsWithJavadoc,
   resolveFoliaJavadocVersion,
@@ -156,9 +156,14 @@ export function createServer(): McpServer {
   // —— Version / project memory ——
   server.tool(
     "mc_set_version",
-    "Pin Paper, Folia, Purpur, or Velocity version after the user stated or confirmed it. Writes .mc-sdk.json and a Cursor rule. NEVER invent a version — ask the user first.",
+    "Pin Paper/Folia/Purpur/Velocity after the user stated or confirmed the version. Requires version + versionSource. projectRoot optional (defaults to existing .mc-sdk.json near cwd, else cwd). NEVER invent a version.",
     {
-      projectRoot: z.string().describe("Absolute path to plugin project root"),
+      projectRoot: z
+        .string()
+        .optional()
+        .describe(
+          "Absolute plugin project root. Optional: walks cwd for .mc-sdk.json, otherwise pins into process.cwd()."
+        ),
       version: z
         .string()
         .describe(
@@ -192,6 +197,8 @@ export function createServer(): McpServer {
       allowUnavailable,
     }) => {
       void versionSource;
+      const target = await resolveWritableProjectRoot(projectRoot);
+      const root = target.root;
       const plat: Platform = platform ?? "paper";
       if (plat === "velocity") {
         const resolved = await resolveVelocityJavadocVersion(version);
@@ -208,7 +215,7 @@ export function createServer(): McpServer {
             ? "latest"
             : resolved.version
           : version.trim();
-        const config = await saveProjectConfig(projectRoot, effective, {
+        const config = await saveProjectConfig(root, effective, {
           notes,
           platform: "velocity",
         });
@@ -217,6 +224,8 @@ export function createServer(): McpServer {
           message: `Pinned Velocity ${effective}`,
           config,
           configFile: CONFIG_FILENAME,
+          projectRoot: root,
+          pinSource: target.source,
         });
       }
 
@@ -236,7 +245,7 @@ export function createServer(): McpServer {
             ? "latest"
             : resolved.version
           : resolved.version;
-        const config = await saveProjectConfig(projectRoot, effective, {
+        const config = await saveProjectConfig(root, effective, {
           notes,
           nms,
           minecraftVersion,
@@ -247,6 +256,8 @@ export function createServer(): McpServer {
           message: `Pinned Folia ${effective}${nms ? " (NMS/paperweight)" : ""}`,
           config,
           configFile: CONFIG_FILENAME,
+          projectRoot: root,
+          pinSource: target.source,
           javadocAvailable: resolved.available,
           versionWarning: resolved.warning,
           inputVersion: resolved.input ?? version,
@@ -265,7 +276,7 @@ export function createServer(): McpServer {
           );
         }
         const effective = resolved.version;
-        const config = await saveProjectConfig(projectRoot, effective, {
+        const config = await saveProjectConfig(root, effective, {
           notes,
           nms,
           minecraftVersion,
@@ -276,6 +287,8 @@ export function createServer(): McpServer {
           message: `Pinned Purpur ${effective} (JD: ${resolved.javadocRoot})`,
           config,
           configFile: CONFIG_FILENAME,
+          projectRoot: root,
+          pinSource: target.source,
           javadocAvailable: resolved.available,
           versionWarning: resolved.warning,
           inputVersion: resolved.input ?? version,
@@ -294,7 +307,7 @@ export function createServer(): McpServer {
         );
       }
       const effective = resolved.available ? resolved.version : resolved.version;
-      const config = await saveProjectConfig(projectRoot, effective, {
+      const config = await saveProjectConfig(root, effective, {
         notes,
         folia,
         nms,
@@ -306,6 +319,8 @@ export function createServer(): McpServer {
         message: `Pinned Paper ${effective}${nms ? " (NMS/paperweight)" : ""}`,
         config,
         configFile: CONFIG_FILENAME,
+        projectRoot: root,
+        pinSource: target.source,
         javadocAvailable: resolved.available,
         versionWarning: resolved.warning,
         inputVersion: resolved.input ?? version,

@@ -27,3 +27,18 @@ export async function findProjectRoot(
   }
   return undefined;
 }
+
+/**
+ * Root to write `.mc-sdk.json` into.
+ * Explicit path → existing pin near cwd → otherwise `process.cwd()`.
+ */
+export async function resolveWritableProjectRoot(
+  explicit?: string
+): Promise<{ root: string; source: "argument" | "cwd" | "cwd_new" }> {
+  if (explicit?.trim()) {
+    return { root: path.resolve(explicit.trim()), source: "argument" };
+  }
+  const existing = await findProjectRoot();
+  if (existing) return existing;
+  return { root: process.cwd(), source: "cwd_new" };
+}

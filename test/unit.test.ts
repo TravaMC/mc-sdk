@@ -489,6 +489,26 @@ paperweight.reobfArtifactConfiguration = io.papermc.paperweight.userdev.ReobfArt
   });
 });
 
+describe("projectRoot", () => {
+  it("resolveWritableProjectRoot falls back to cwd", async () => {
+    const { resolveWritableProjectRoot } = await import("../src/projectRoot.js");
+    const hit = await resolveWritableProjectRoot();
+    assert.ok(hit.root);
+    assert.ok(hit.source === "cwd" || hit.source === "cwd_new" || hit.source === "argument");
+  });
+
+  it("resolveWritableProjectRoot respects explicit path", async () => {
+    const { resolveWritableProjectRoot } = await import("../src/projectRoot.js");
+    const root = await mkdtemp(path.join(tmpdir(), "mpsdk-root-"));
+    after(async () => {
+      await rm(root, { recursive: true, force: true });
+    });
+    const hit = await resolveWritableProjectRoot(root);
+    assert.equal(hit.source, "argument");
+    assert.equal(hit.root, path.resolve(root));
+  });
+});
+
 describe("cache", () => {
   it("inspects fresh vs miss and stores etag meta", async () => {
     const { setCached, inspectCached, clearCache, cacheDir } = await import(

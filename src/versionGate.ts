@@ -20,7 +20,7 @@ export type VersionSource = z.infer<typeof versionSourceSchema>;
 export const ASK_USER_FOR_VERSION =
   "STOP. Do not invent or guess a Minecraft/Paper/Folia/Purpur/Velocity version. " +
   "Ask the user which platform and version to target (e.g. Paper 26.2, Paper 1.21.1, Velocity 3.4.0). " +
-  "Only after they answer: call mc_set_version with versionSource=user_stated. " +
+  "Only after they answer: call mc_set_version with version=<their answer> and versionSource=user_stated (projectRoot optional — uses cwd). " +
   "If build files exist, you may run mc_detect_version (without pin), show results, and pin only after they confirm " +
   "(versionSource=user_confirmed_detection or pin with userConfirmedVersion). " +
   "If `.mc-sdk.json` already exists: pass projectRoot (or run the MCP with cwd inside that project) — the pin is used automatically; do not ask again.";
@@ -29,7 +29,7 @@ export const SERVER_INSTRUCTIONS = `mc-sdk — Minecraft plugin MCP.
 
 HARD RULE — version must come from the user (or their confirmed detection), never from the model:
 1. If .mc-sdk.json already pins a version, use that pin silently (pass projectRoot, or rely on cwd auto-detect). Do not ask again and do not invent another version.
-2. If there is no pin and the user has not stated a version in this chat: ASK them. Do not call mc_set_version / mc_scaffold_project with a guessed version.
+2. If there is no pin and the user has not stated a version in this chat: ASK them. Then mc_set_version with version + versionSource=user_stated (projectRoot optional). Do not invent a version.
 3. Optional mc_detect_version is OK to propose candidates, but never pin=true until the user confirms the exact version string.
 4. Never invent Gradle coords or API members for an assumed version — pin first, then look up.
 

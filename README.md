@@ -47,7 +47,7 @@ npm link          # опционально — `mc-sdk` в PATH
 ```
 
 После правок кода: `npm run build`, затем перезапустите MCP (Off→On).  
-Проверка: `mc_cache_stats` → `sdkPackageVersion` (`3.1.1`+).
+Проверка: `mc_cache_stats` → `sdkPackageVersion` (`3.1.2`+).
 
 См. [`mcp.json.example`](mcp.json.example).
 
