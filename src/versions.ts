@@ -1,5 +1,7 @@
 import { fetchText } from "./cache.js";
+import { javadocTreeExists } from "./javadoc/indexParse.js";
 import { javadocBaseUrlFor } from "./platform.js";
+import { compareVersions } from "./util/versionCompare.js";
 import {
   defaultMinJava,
   normalizeGameVersion,
@@ -48,19 +50,7 @@ export async function getPaperBuilds(version: string): Promise<unknown> {
 }
 
 export async function versionHasJavadoc(version: string): Promise<boolean> {
-  try {
-    const res = await fetch(
-      `${javadocBaseUrlFor("paper", version)}type-search-index.js`,
-      {
-        method: "HEAD",
-        headers: { "User-Agent": "mc-sdk/3.2" },
-        signal: AbortSignal.timeout(8_000),
-      }
-    );
-    return res.ok;
-  } catch {
-    return false;
-  }
+  return javadocTreeExists(javadocBaseUrlFor("paper", version));
 }
 
 export async function resolveJavadocVersion(requested: string): Promise<{
@@ -122,25 +112,7 @@ function sharesFamily(a: string, b: string): boolean {
   return pa[1] === pb[1];
 }
 
-export function compareVersions(a: string, b: string): number {
-  const na = normalizeParts(a);
-  const nb = normalizeParts(b);
-  const len = Math.max(na.length, nb.length);
-  for (let i = 0; i < len; i++) {
-    const da = na[i] ?? 0;
-    const db = nb[i] ?? 0;
-    if (da !== db) return da - db;
-  }
-  return a.localeCompare(b);
-}
-
-function normalizeParts(v: string): number[] {
-  const core = v.split("-")[0];
-  return core.split(".").map((p) => {
-    const n = Number.parseInt(p, 10);
-    return Number.isFinite(n) ? n : 0;
-  });
-}
+export { compareVersions };
 
 export async function listVersionsWithJavadocStatus(
   limit = 40

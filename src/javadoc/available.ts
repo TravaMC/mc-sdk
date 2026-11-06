@@ -1,3 +1,4 @@
+import { USER_AGENT } from "../meta.js";
 import { listFoliaVersionsFromFill, foliaHasJavadoc } from "../folia/versions.js";
 import { listPurpurVersionsFromApi } from "../purpur/versions.js";
 import { listVelocityVersionsFromFill, velocityHasJavadoc } from "../velocity/versions.js";
@@ -36,7 +37,7 @@ export async function latestPublishedJavadoc(project: JdProject): Promise<string
     const res = await fetch(`https://jd.papermc.io/${project}/`, {
       method: "HEAD",
       redirect: "manual",
-      headers: { "User-Agent": "mc-sdk/3.2" },
+      headers: { "User-Agent": USER_AGENT },
       signal: AbortSignal.timeout(8_000),
     });
     const loc = res.headers.get("location") ?? "";

@@ -20,7 +20,7 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "dev": "tsx src/index.ts",
-    "test": "tsx --test test/unit.test.ts test/v32.test.ts",
+    "test": "tsx --test test/unit.test.ts test/v32.test.ts test/core.test.ts",
     "check:docs": "tsx scripts/check-docs-links.ts",
     "smoke": "tsx scripts/smoke.ts",
     "prepack": "npm run build"

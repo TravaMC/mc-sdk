@@ -1,3 +1,4 @@
+import { USER_AGENT } from "../meta.js";
 import { fetchText, getCachedText, setCachedText } from "../cache.js";
 import { guessMinecraftVersion } from "../config.js";
 import { isModernPaperLine, normalizeGameVersion } from "../versioning.js";
@@ -223,7 +224,7 @@ export async function loadServerMappings(mcVersion: string): Promise<string> {
   if (!mapUrl) throw new Error(`No server_mappings for ${mcVersion}`);
 
   const text = await fetch(mapUrl, {
-    headers: { "User-Agent": "mc-sdk/3.2" },
+    headers: { "User-Agent": USER_AGENT },
     signal: AbortSignal.timeout(60_000),
   }).then(async (r) => {
     if (!r.ok) throw new Error(`HTTP ${r.status} downloading mappings`);
@@ -259,7 +260,7 @@ export async function loadServerJarIndex(mcVersion: string): Promise<string> {
   if (!server?.url) throw new Error(`No server.jar download for ${mcVersion}`);
 
   const jar = await fetch(server.url, {
-    headers: { "User-Agent": "mc-sdk/3.2" },
+    headers: { "User-Agent": USER_AGENT },
     signal: AbortSignal.timeout(180_000),
   }).then(async (r) => {
     if (!r.ok) throw new Error(`HTTP ${r.status} downloading server.jar`);

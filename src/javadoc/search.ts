@@ -1,5 +1,6 @@
 import { fetchText } from "../cache.js";
 import { javadocBaseUrlFor, type Platform } from "../platform.js";
+import { parseJsIndexArray } from "./indexParse.js";
 import {
   annotationWarnings,
   curatedAnnotation,
@@ -55,48 +56,37 @@ interface PackageIndexEntry {
   l: string;
 }
 
-function parseJsIndexArray<T>(source: string, varName: string): T[] {
-  const marker = `${varName} = `;
-  const start = source.indexOf(marker);
-  if (start < 0) {
-    throw new Error(`Could not find ${varName} in search index`);
-  }
-  let i = start + marker.length;
-  while (i < source.length && /\s/.test(source[i])) i++;
-  if (source[i] !== "[") {
-    throw new Error(`Expected array for ${varName}`);
-  }
+/** Parsed indexes kept in memory: repeated searches on one pin skip disk read + JSON parse. */
+const INDEX_MEMO_MAX = 6;
+const INDEX_MEMO_TTL_MS = 30 * 60 * 1000;
+const indexMemo = new Map<string, { at: number; value: Promise<SearchIndexes> }>();
 
-  let depth = 0;
-  let inString = false;
-  let escape = false;
-  const begin = i;
-  for (; i < source.length; i++) {
-    const ch = source[i];
-    if (inString) {
-      if (escape) escape = false;
-      else if (ch === "\\") escape = true;
-      else if (ch === '"') inString = false;
-      continue;
-    }
-    if (ch === '"') {
-      inString = true;
-      continue;
-    }
-    if (ch === "[") depth++;
-    else if (ch === "]") {
-      depth--;
-      if (depth === 0) {
-        return JSON.parse(source.slice(begin, i + 1)) as T[];
-      }
-    }
-  }
-  throw new Error(`Unterminated array for ${varName}`);
+export function clearSearchIndexMemo(): void {
+  indexMemo.clear();
 }
 
 export async function loadSearchIndexes(
   version: string,
   platform: Platform = "paper"
+): Promise<SearchIndexes> {
+  const key = `${platform}:${version || "root"}`;
+  const hit = indexMemo.get(key);
+  if (hit && Date.now() - hit.at < INDEX_MEMO_TTL_MS) return hit.value;
+  const value = loadSearchIndexesUncached(version, platform);
+  indexMemo.set(key, { at: Date.now(), value });
+  // Failed loads must not stick in memory.
+  value.catch(() => indexMemo.delete(key));
+  while (indexMemo.size > INDEX_MEMO_MAX) {
+    const oldest = indexMemo.keys().next().value;
+    if (oldest === undefined) break;
+    indexMemo.delete(oldest);
+  }
+  return value;
+}
+
+async function loadSearchIndexesUncached(
+  version: string,
+  platform: Platform
 ): Promise<SearchIndexes> {
   const base = javadocBaseUrlFor(platform, version);
   const cachePrefix = `jd:${platform}:${version || "root"}`;

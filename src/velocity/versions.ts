@@ -1,5 +1,7 @@
 import { fetchText } from "../cache.js";
+import { javadocTreeExists } from "../javadoc/indexParse.js";
 import { javadocBaseUrlFor } from "../platform.js";
+import { compareVersions as compareLoose } from "../util/versionCompare.js";
 import { velocityMinJava } from "../versioning.js";
 
 export interface VelocityVersionInfo {
@@ -41,28 +43,8 @@ export async function listVelocityVersionsFromFill(): Promise<string[]> {
   return [...new Set(out)];
 }
 
-function compareLoose(a: string, b: string): number {
-  const pa = a.split(".").map((x) => Number.parseInt(x, 10) || 0);
-  const pb = b.split(".").map((x) => Number.parseInt(x, 10) || 0);
-  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
-    const d = (pa[i] ?? 0) - (pb[i] ?? 0);
-    if (d) return d;
-  }
-  return a.localeCompare(b);
-}
-
 export async function velocityHasJavadoc(version: string): Promise<boolean> {
-  const url = `${javadocBaseUrlFor("velocity", version)}type-search-index.js`;
-  try {
-    const res = await fetch(url, {
-      method: "HEAD",
-      headers: { "User-Agent": "mc-sdk/3.2" },
-      signal: AbortSignal.timeout(8_000),
-    });
-    return res.ok;
-  } catch {
-    return false;
-  }
+  return javadocTreeExists(javadocBaseUrlFor("velocity", version));
 }
 
 export async function resolveVelocityJavadocVersion(requested: string): Promise<{

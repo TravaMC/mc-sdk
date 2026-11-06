@@ -1,5 +1,7 @@
 import { fetchText } from "../cache.js";
+import { javadocTreeExists } from "../javadoc/indexParse.js";
 import { javadocBaseUrlFor } from "../platform.js";
+import { compareVersions as compareLoose } from "../util/versionCompare.js";
 import {
   defaultMinJava,
   normalizeGameVersion,
@@ -22,17 +24,7 @@ interface PurpurVersionsResponse {
 
 /** Purpur hosts a single JD tree (not /javadoc/{version}/). */
 export async function purpurHasJavadoc(): Promise<boolean> {
-  const url = `${javadocBaseUrlFor("purpur", "")}type-search-index.js`;
-  try {
-    const res = await fetch(url, {
-      method: "HEAD",
-      headers: { "User-Agent": "mc-sdk/3.2" },
-      signal: AbortSignal.timeout(8_000),
-    });
-    return res.ok;
-  } catch {
-    return false;
-  }
+  return javadocTreeExists(javadocBaseUrlFor("purpur", ""));
 }
 
 export async function listPurpurVersionsFromApi(): Promise<string[]> {
@@ -44,16 +36,6 @@ export async function listPurpurVersionsFromApi(): Promise<string[]> {
   const versions = [...(data.versions ?? [])];
   versions.sort((a, b) => compareLoose(b, a));
   return versions;
-}
-
-function compareLoose(a: string, b: string): number {
-  const pa = a.split(".").map((x) => Number.parseInt(x, 10) || 0);
-  const pb = b.split(".").map((x) => Number.parseInt(x, 10) || 0);
-  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
-    const d = (pa[i] ?? 0) - (pb[i] ?? 0);
-    if (d) return d;
-  }
-  return a.localeCompare(b);
 }
 
 export async function resolvePurpurJavadocVersion(requested: string): Promise<{
