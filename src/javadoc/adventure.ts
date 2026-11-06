@@ -1,5 +1,7 @@
 import { fetchText } from "../cache.js";
 import { adventureJavadocBaseUrl } from "../config.js";
+import type { Platform } from "../platform.js";
+import { latestPublishedJavadoc } from "./available.js";
 
 interface TypeIndexEntry {
   p?: string;
@@ -39,14 +41,40 @@ function parseJsIndexArray<T>(source: string, varName: string): T[] {
   throw new Error(`Unterminated ${varName}`);
 }
 
-export async function searchAdventure(query: string, limit = 20) {
+/** Last Adventure 4.x release; its Javadoc lives on jd.advntr.dev (jd.papermc.io only hosts 5.x). */
+export const ADVENTURE_4_JD = "https://jd.advntr.dev/api/4.26.1/";
+/** Offline fallback for the 5.x line (jd.papermc.io/adventure/ redirects to the newest). */
+export const ADVENTURE_5_FALLBACK_JD = "https://jd.papermc.io/adventure/5.2.0/";
+
+/**
+ * Which Adventure major a pinned server line ships with.
+ * Paper/Folia/Purpur 26.2+ and Velocity 4.x → Adventure 5; 26.1.x, 1.21.x and Velocity 3.x → 4.
+ */
+export function adventureMajorFor(platform: Platform | undefined, version: string | undefined): 4 | 5 {
+  const v = (version ?? "").trim();
+  if (!v || v === "latest" || v === "root") return 5;
+  const [maj, min] = v.split(".").map((p) => Number.parseInt(p, 10) || 0);
+  if (platform === "velocity") return maj >= 4 ? 5 : 4;
+  if (maj >= 27) return 5;
+  if (maj === 26) return min >= 2 ? 5 : 4;
+  return 4;
+}
+
+export async function searchAdventure(
+  query: string,
+  limit = 20,
+  options?: { major?: 4 | 5 }
+) {
+  const major = options?.major ?? 5;
   const base = adventureJavadocBaseUrl();
-  // Adventure JD may redirect to a versioned path — try common roots
-  const candidates = [
-    `${base}type-search-index.js`,
-    `${base}latest/type-search-index.js`,
-    `https://jd.papermc.io/adventure/4.25.0/type-search-index.js`,
-  ];
+  const candidates: string[] = [];
+  if (major === 4) {
+    candidates.push(`${ADVENTURE_4_JD}type-search-index.js`);
+  } else {
+    const latest = await latestPublishedJavadoc("adventure");
+    if (latest) candidates.push(`${base}${latest}/type-search-index.js`);
+    candidates.push(`${ADVENTURE_5_FALLBACK_JD}type-search-index.js`);
+  }
 
   let types: TypeIndexEntry[] | null = null;
   let usedBase = base;
@@ -64,7 +92,9 @@ export async function searchAdventure(query: string, limit = 20) {
     }
   }
   if (!types) {
-    throw new Error("Could not load Adventure type-search-index from jd.papermc.io/adventure");
+    throw new Error(
+      `Could not load Adventure ${major}.x type-search-index (${candidates.join(", ")})`
+    );
   }
 
   const q = query.toLowerCase();
@@ -89,5 +119,16 @@ export async function searchAdventure(query: string, limit = 20) {
         : `${usedBase}${t.p ? t.p.replaceAll(".", "/") + "/" : ""}${t.l}.html`,
     }));
 
-  return { base: usedBase, hits };
+  const adventureVersion = /\/(\d+\.\d+\.\d+)\/$/.exec(usedBase)?.[1];
+  return {
+    base: usedBase,
+    adventureMajor: major,
+    adventureVersion,
+    ...(major === 5
+      ? {
+          note: "Adventure 5 (Paper/Purpur/Folia 26.2+, Velocity 4.x): Component/ClickEvent changes — see mc_adventure_guide 'Adventure 5' section.",
+        }
+      : {}),
+    hits,
+  };
 }

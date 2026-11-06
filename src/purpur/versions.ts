@@ -26,7 +26,8 @@ export async function purpurHasJavadoc(): Promise<boolean> {
   try {
     const res = await fetch(url, {
       method: "HEAD",
-      headers: { "User-Agent": "mc-sdk/3.0" },
+      headers: { "User-Agent": "mc-sdk/3.2" },
+      signal: AbortSignal.timeout(8_000),
     });
     return res.ok;
   } catch {

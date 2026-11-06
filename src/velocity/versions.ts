@@ -1,9 +1,14 @@
 import { fetchText } from "../cache.js";
 import { javadocBaseUrlFor } from "../platform.js";
+import { velocityMinJava } from "../versioning.js";
 
 export interface VelocityVersionInfo {
   version: string;
   hasJavadoc: boolean;
+  /** Listed as a release on Fill (JD may still lag) */
+  released?: boolean;
+  /** velocity-api bytecode level (4.x → 25) */
+  minJava?: number;
 }
 
 interface FillProjectResponse {
@@ -11,8 +16,11 @@ interface FillProjectResponse {
   versions: Record<string, string[]>;
 }
 
-/** Known JD roots that often exist even if Fill naming differs. */
-const KNOWN_JD = ["4.1.0", "4.0.0", "3.4.0", "3.3.0"];
+/**
+ * Known JD roots, newest first. JD publication lags releases: Velocity 4.3.x is released
+ * (Fill) but jd.papermc.io/velocity/ still redirects to 4.2.1 — see javadoc/available.ts.
+ */
+const KNOWN_JD = ["4.2.1", "4.2.0", "4.1.0", "4.0.0", "3.4.0", "3.3.0"];
 
 export async function listVelocityVersionsFromFill(): Promise<string[]> {
   const text = await fetchText("https://fill.papermc.io/v3/projects/velocity", {
@@ -48,7 +56,8 @@ export async function velocityHasJavadoc(version: string): Promise<boolean> {
   try {
     const res = await fetch(url, {
       method: "HEAD",
-      headers: { "User-Agent": "mc-sdk/3.0" },
+      headers: { "User-Agent": "mc-sdk/3.2" },
+      signal: AbortSignal.timeout(8_000),
     });
     return res.ok;
   } catch {
@@ -80,17 +89,17 @@ export async function resolveVelocityJavadocVersion(requested: string): Promise<
       return { version: trimmed, available: false, suggestion: c };
     }
   }
-  return { version: trimmed, available: false, suggestion: "3.4.0" };
+  return { version: trimmed, available: false, suggestion: KNOWN_JD[0] };
 }
 
 export async function listVelocityVersionsWithJavadoc(
   limit = 20
 ): Promise<VelocityVersionInfo[]> {
-  const fromFill = await listVelocityVersionsFromFill();
-  const candidates = [...new Set([...KNOWN_JD, ...fromFill, "latest"])].slice(
-    0,
-    limit
-  );
+  const fromFill = await listVelocityVersionsFromFill().catch(() => [] as string[]);
+  const candidates = [
+    "latest",
+    ...[...new Set([...fromFill, ...KNOWN_JD])].sort((a, b) => compareLoose(b, a)),
+  ].slice(0, limit);
   const results: VelocityVersionInfo[] = [];
   const batch = 6;
   for (let i = 0; i < candidates.length; i += batch) {
@@ -99,7 +108,13 @@ export async function listVelocityVersionsWithJavadoc(
       slice.map((v) => velocityHasJavadoc(v === "latest" ? "" : v))
     );
     for (let j = 0; j < slice.length; j++) {
-      results.push({ version: slice[j], hasJavadoc: flags[j] });
+      const version = slice[j];
+      results.push({
+        version,
+        hasJavadoc: flags[j],
+        released: version === "latest" ? undefined : fromFill.includes(version),
+        minJava: version === "latest" ? undefined : velocityMinJava(version),
+      });
     }
   }
   return results;

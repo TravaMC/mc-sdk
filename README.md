@@ -1,6 +1,6 @@
 # mc-sdk
 
-MCP-сервер для разработки плагинов **Paper**, **Folia**, **Purpur** и **Velocity**: версионированные Javadoc, документация PaperMC, поиск Hangar, шаблоны и lookup **Mojang-mapped NMS**.
+MCP-сервер для разработки плагинов **Paper**, **Folia**, **Purpur** и **Velocity**: версионированные Javadoc, документация PaperMC, поиск Hangar, шаблоны и lookup **NMS** (на 26.1+ — прямо из официального server.jar).
 
 Агенты должны сначала **узнать у пользователя** платформу/версию (или подтвердить detect), закрепить её, затем смотреть API — а не угадывать версию и не выдумывать члены классов.
 
@@ -14,6 +14,8 @@ MCP-сервер для разработки плагинов **Paper**, **Folia
 | Folia | https://jd.papermc.io/folia/{version}/ | `mc_set_version` `platform=folia` |
 | Purpur | https://purpurmc.org/javadoc/ | `mc_set_version` `platform=purpur` |
 | Velocity | https://jd.papermc.io/velocity/{version}/ | `mc_set_version` `platform=velocity` |
+
+Актуально на ноябрь 2026: **Paper / Purpur / Folia 26.3**, **Velocity 4.3.1** (всё на Java 25). Javadoc Velocity 4.3.x и Folia 26.3 ещё не опубликованы — mc-sdk закрепляет реальную версию, а ищет по ближайшему опубликованному дереву (4.2.1 / 26.2) и пишет `javadocWarning`.
 
 Память проекта: `.mc-sdk.json` (+ правило Cursor `.cursor/rules/mc-sdk.mdc`).
 
@@ -47,7 +49,7 @@ npm link          # опционально — `mc-sdk` в PATH
 ```
 
 После правок кода: `npm run build`, затем перезапустите MCP (Off→On).  
-Проверка: `mc_cache_stats` → `sdkPackageVersion` (`3.1.2`+).
+Проверка: `mc_cache_stats` → `sdkPackageVersion` (`3.2.0`+).
 
 См. [`mcp.json.example`](mcp.json.example).
 
@@ -63,7 +65,9 @@ npm link          # опционально — `mc-sdk` в PATH
 | Проект | **`mc_scaffold_project`**, **`mc_validate_build_gradle`**, `mc_validate_plugin_yml`, `mc_template`, `mc_hangar_search`, `mc_cache_stats`, `mc_cache_clear` |
 | NMS lookup | `mc_nms_search`, `mc_nms_class` |
 
-**Совет для 26.x:** не выдумывайте `1.26.2-R0.1-SNAPSHOT` — вызывайте `mc_resolve_dependency`. Алиас `1.26.2` → `26.2` срабатывает автоматически с предупреждением. NMS на 26.1+: `nms: true`, `MOJANG_PRODUCTION`, без `reobfJar`.
+**Совет для 26.x:** не выдумывайте `1.26.3-R0.1-SNAPSHOT` — вызывайте `mc_resolve_dependency` (даёт `26.3.build.N-stable`, Java 25, `api-version: '26.3'`). Алиас `1.26.3` → `26.3` срабатывает автоматически с предупреждением. NMS на 26.1+: `nms: true`, `MOJANG_PRODUCTION`, без `reobfJar`, paperweight-userdev 2.0.0-beta.24 → Gradle 9.7.1+. `mc_nms_class` на 26.1+ читает имена из server.jar нужной версии.
+
+**Adventure 5:** Paper/Purpur/Folia 26.2+ и Velocity 4.x используют Adventure 5 — `mc_adventure_search` сам выбирает 5.x или 4.x по пину; раздел миграции — в `mc_adventure_guide`.
 
 **Версия:** если пользователь не назвал Paper/MC версию и нет `.mc-sdk.json` — агент обязан спросить. Уже есть pin → передайте `projectRoot` или запустите MCP из корня проекта (авто-поиск `.mc-sdk.json` вверх от cwd). `mc_set_version` / `mc_scaffold_project` требуют `versionSource=user_stated|user_confirmed_detection`.
 
@@ -74,7 +78,7 @@ npm link          # опционально — `mc-sdk` в PATH
 ## Руководства
 
 - [docs/adventure.md](docs/adventure.md) — Adventure Component (Paper + Velocity; без Bungee legacy)  
-- [docs/paper-26.md](docs/paper-26.md) — world clock / `setTime` / gamerules на 26.x  
+- [docs/paper-26.md](docs/paper-26.md) — изменения 26.1 → 26.3, world clock / `setTime` / gamerules  
 - [docs/async.md](docs/async.md) — главный поток vs async  
 - [docs/commands.md](docs/commands.md) — classic vs Brigadier  
 - [docs/purpur.md](docs/purpur.md) — API только Purpur  
@@ -100,7 +104,7 @@ npm link          # опционально — `mc-sdk` в PATH
 
 Ответы HTTP/Javadoc лежат в `~/.cache/mc-sdk` (не в проекте плагина). Авто TTL / ETag; при необходимости `mc_cache_stats` / `mc_cache_clear`.
 
-Mappings Mojang — только для локальной разработки, дампы не распространяйте.
+Mappings Mojang и индекс server.jar 26.x — только для локальной разработки, дампы не распространяйте.
 
 ## Примеры
 

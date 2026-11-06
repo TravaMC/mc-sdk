@@ -3,7 +3,12 @@ import path from "node:path";
 import { resolveDependency } from "./deps/resolve.js";
 import type { Platform } from "./platform.js";
 import { renderTemplate } from "./templates.js";
-import { normalizeGameVersion, pluginApiVersion } from "./versioning.js";
+import { latestGradleVersion } from "./toolchain.js";
+import {
+  FOOJAY_RESOLVER_VERSION,
+  normalizeGameVersion,
+  pluginApiVersion,
+} from "./versioning.js";
 
 export async function scaffoldProject(options: {
   projectRoot: string;
@@ -16,6 +21,8 @@ export async function scaffoldProject(options: {
   written: string[];
   dependency: Awaited<ReturnType<typeof resolveDependency>>;
   versionWarning?: string;
+  /** Gradle version suggested for the wrapper (live from services.gradle.org) */
+  gradleVersion: string;
 }> {
   const platform = options.platform ?? "paper";
   const norm = normalizeGameVersion(options.version);
@@ -26,6 +33,7 @@ export async function scaffoldProject(options: {
   const root = options.projectRoot;
 
   const dependency = await resolveDependency({ platform, version });
+  const gradleVersion = await latestGradleVersion();
   const apiVersion = pluginApiVersion(version);
   const pkgPath = path.join(root, "src", "main", "java", ...pkg.split("."));
   const resPath = path.join(root, "src", "main", "resources");
@@ -44,7 +52,7 @@ export async function scaffoldProject(options: {
   await write(
     "settings.gradle.kts",
     `plugins {
-    id("org.gradle.toolchains.foojay-resolver-convention") version "0.9.0"
+    id("org.gradle.toolchains.foojay-resolver-convention") version "${FOOJAY_RESOLVER_VERSION}"
 }
 rootProject.name = "${pluginName}"
 `
@@ -55,24 +63,32 @@ rootProject.name = "${pluginName}"
     .replace(/^\/\/ settings\.gradle\.kts must include:[\s\S]*?\n\n/, "")
     .trimStart();
   await write("build.gradle.kts", buildBody);
-  await write(
-    "src/main/resources/plugin.yml",
-    `name: ${pluginName}
+  if (platform === "velocity") {
+    // Proxy plugin: @Plugin main class; velocity-plugin.json comes from the annotation processor.
+    await write(
+      `src/main/java/${pkg.replaceAll(".", "/")}/${cls}.java`,
+      renderTemplate("velocity_main", { packageName: pkg, className: cls, pluginName, version })
+    );
+  } else {
+    await write(
+      "src/main/resources/plugin.yml",
+      `name: ${pluginName}
 version: '\${version}'
 main: ${pkg}.${cls}
 api-version: '${apiVersion}'
 ${platform === "folia" ? "folia-supported: true\n" : ""}description: Scaffolded by mc-sdk
 authors: [You]
 `
-  );
-  await write(
-    `src/main/java/${pkg.replaceAll(".", "/")}/${cls}.java`,
-    renderTemplate("plugin_main", { packageName: pkg, className: cls, version })
-  );
-  await write(
-    `src/main/java/${pkg.replaceAll(".", "/")}/${cls}Listener.java`,
-    renderTemplate("listener", { packageName: pkg, className: cls, version })
-  );
+    );
+    await write(
+      `src/main/java/${pkg.replaceAll(".", "/")}/${cls}.java`,
+      renderTemplate("plugin_main", { packageName: pkg, className: cls, version })
+    );
+    await write(
+      `src/main/java/${pkg.replaceAll(".", "/")}/${cls}Listener.java`,
+      renderTemplate("listener", { packageName: pkg, className: cls, version })
+    );
+  }
   await write(
     ".gitignore",
     `.gradle/
@@ -96,14 +112,14 @@ Scaffolded by mc-sdk for **${platform} ${version}**.
 
 - Min Java: **${dependency.minJava}**
 - Dependency: \`${dependency.exactVersion ?? dependency.versionNotation}\`
-- api-version: \`${apiVersion}\`
+${platform === "velocity" ? "- Velocity: `@Plugin` annotation (velocity-plugin.json is generated at compile time)" : `- api-version: \`${apiVersion}\``}
 
 \`\`\`bash
 ./gradlew build
 # Windows non-ASCII paths (Cyrillic user folders): .\\build.ps1
 \`\`\`
 
-Generate wrapper if missing: \`gradle wrapper --gradle-version 8.14.2\`
+Generate wrapper if missing: \`gradle wrapper --gradle-version ${gradleVersion}\`
 
 ${norm.warning ? `> ${norm.warning}\n` : ""}${
       dependency.fallbackFrom
@@ -113,5 +129,5 @@ ${norm.warning ? `> ${norm.warning}\n` : ""}${
 `
   );
 
-  return { written, dependency, versionWarning: norm.warning };
+  return { written, dependency, versionWarning: norm.warning, gradleVersion };
 }

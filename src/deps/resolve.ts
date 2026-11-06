@@ -1,6 +1,8 @@
 import { fetchText } from "../cache.js";
 import type { Platform } from "../platform.js";
+import { fillMinJava, latestUserdev } from "../toolchain.js";
 import {
+  FOOJAY_RESOLVER_VERSION,
   defaultMinJava,
   gradleJvmAdvice,
   normalizeGameVersion,
@@ -12,6 +14,7 @@ import {
   minGradleForUserdev,
   requiresMojangProduction,
   repoUrlFor,
+  velocityMinJava,
 } from "../versioning.js";
 
 export interface ResolvedNmsToolchain {
@@ -102,22 +105,6 @@ function pickBestArtifactVersion(
   return { exact: best(matching), channel: "unknown" };
 }
 
-async function fillMinJava(version: string): Promise<number | null> {
-  try {
-    const text = await fetchText(
-      `https://fill.papermc.io/v3/projects/paper/versions/${encodeURIComponent(version)}`,
-      { cacheKey: `fill:paper:version:${version}`, ttlMs: 6 * 60 * 60 * 1000 }
-    );
-    const data = JSON.parse(text) as {
-      version?: { java?: { version?: { minimum?: number } } };
-    };
-    const m = data.version?.java?.version?.minimum;
-    return typeof m === "number" ? m : null;
-  } catch {
-    return null;
-  }
-}
-
 function gradleSnippet(opts: {
   platform: Platform;
   repository: string;
@@ -131,7 +118,7 @@ function gradleSnippet(opts: {
       ? `    maven("https://repo.purpurmc.org/snapshots")\n`
       : "";
   return `// settings.gradle.kts must include:
-// plugins { id("org.gradle.toolchains.foojay-resolver-convention") version "0.9.0" }
+// plugins { id("org.gradle.toolchains.foojay-resolver-convention") version "${FOOJAY_RESOLVER_VERSION}" }
 
 plugins {
     java
@@ -185,8 +172,12 @@ export async function resolveDependency(options: {
   const notes: string[] = [];
   if (norm.warning) notes.push(norm.warning);
 
-  const minJavaFill = platform === "velocity" ? null : await fillMinJava(version);
-  const minJava = minJavaFill ?? defaultMinJava(version);
+  const minJavaFill = await fillMinJava(
+    platform === "velocity" ? "velocity" : platform === "folia" ? "folia" : "paper",
+    version
+  );
+  const minJava =
+    minJavaFill ?? (platform === "velocity" ? velocityMinJava(version) : defaultMinJava(version));
   const apiVersion = pluginApiVersion(version);
   notes.push(gradleJvmAdvice(minJava));
 
@@ -224,10 +215,33 @@ export async function resolveDependency(options: {
       versionNotation: dep,
       exactVersion: version,
       repository: "https://repo.papermc.io/repository/maven-public/",
-      minJava: 21,
+      minJava,
       apiVersion: "n/a",
-      gradleKotlin: `repositories {\n    mavenCentral()\n    maven("https://repo.papermc.io/repository/maven-public/")\n}\ndependencies {\n    compileOnly("${dep}")\n    annotationProcessor("${dep}")\n}\n`,
-      notes,
+      gradleKotlin: `// settings.gradle.kts must include:
+// plugins { id("org.gradle.toolchains.foojay-resolver-convention") version "${FOOJAY_RESOLVER_VERSION}" }
+
+plugins {
+    java
+}
+
+java {
+    toolchain.languageVersion.set(JavaLanguageVersion.of(${minJava}))
+}
+
+repositories {
+    mavenCentral()
+    maven("https://repo.papermc.io/repository/maven-public/")
+}
+
+dependencies {
+    compileOnly("${dep}")
+    annotationProcessor("${dep}")
+}
+`,
+      notes: [
+        ...notes,
+        `velocity-api ${version} needs Java ${minJava} (Gradle module metadata / Fill). A lower toolchain fails variant resolution.`,
+      ],
     };
   }
 
@@ -348,9 +362,18 @@ async function resolveNmsToolchain(
   minJava: number
 ): Promise<{ toolchain: ResolvedNmsToolchain; notes: string[] }> {
   const notes: string[] = [];
-  const userdevPlugin = defaultUserdevPluginVersion(version);
-  const minGradle = minGradleForUserdev(version);
   const mojangProd = requiresMojangProduction(version);
+  let userdevPlugin = defaultUserdevPluginVersion(version);
+  let minGradle = minGradleForUserdev(version);
+  if (userdevPlugin.startsWith("2.")) {
+    // Live latest from the plugin portal (+ the Gradle API it declares); constants offline.
+    const live = await latestUserdev();
+    userdevPlugin = live.version;
+    minGradle = live.minGradle;
+    if (live.source === "fallback") {
+      notes.push(`Plugin portal unreachable — using offline default userdev ${userdevPlugin}.`);
+    }
+  }
   const dynamic = paperDevBundleNotation(version);
 
   let exact: string | undefined;
@@ -371,7 +394,7 @@ async function resolveNmsToolchain(
 
   const bundle = exact ?? dynamic;
   notes.push(
-    `paperweight-userdev ${userdevPlugin} requires Gradle ${minGradle}+ (8.14 + userdev 2.x → plugin-api variant mismatch).`
+    `paperweight-userdev ${userdevPlugin} requires Gradle ${minGradle}+ (older wrapper → "plugin-api variant mismatch"). Update gradle-wrapper.properties first.`
   );
   if (mojangProd) {
     notes.push(
@@ -390,7 +413,7 @@ async function resolveNmsToolchain(
     }
 }
 plugins {
-    id("org.gradle.toolchains.foojay-resolver-convention") version "0.9.0"
+    id("org.gradle.toolchains.foojay-resolver-convention") version "${FOOJAY_RESOLVER_VERSION}"
 }
 `;
 

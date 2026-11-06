@@ -35,7 +35,7 @@ import {
   resolvePurpurJavadocVersion,
 } from "./purpur/versions.js";
 import { searchHangar } from "./hangar.js";
-import { javadocSearchVersion } from "./platform.js";
+import { isKnownRelease, resolveJavadocPath } from "./javadoc/available.js";
 import {
   clearCache,
   getCacheStats,
@@ -48,7 +48,7 @@ import {
   searchEnumConstants,
   type BuiltinEnumKind,
 } from "./javadoc/enums.js";
-import { searchAdventure } from "./javadoc/adventure.js";
+import { adventureMajorFor, searchAdventure } from "./javadoc/adventure.js";
 import { formatClassDoc, fetchClassDoc } from "./javadoc/parse.js";
 import { searchApi } from "./javadoc/search.js";
 import {
@@ -167,7 +167,7 @@ export function createServer(): McpServer {
       version: z
         .string()
         .describe(
-          "Exact version the user stated or confirmed (e.g. 26.2, 1.21.1). Alias: 1.26.2 → 26.2. Velocity: 3.4.0 / latest. Do not invent."
+          "Exact version the user stated or confirmed (e.g. 26.3, 1.21.11). Alias: 1.26.3 → 26.3. Velocity: 4.3.1 / latest. Do not invent."
         ),
       versionSource: versionSourceSchema,
       platform: platformEnum
@@ -202,9 +202,11 @@ export function createServer(): McpServer {
       const plat: Platform = platform ?? "paper";
       if (plat === "velocity") {
         const resolved = await resolveVelocityJavadocVersion(version);
-        if (!resolved.available && !allowUnavailable) {
+        const released =
+          !resolved.available && (await isKnownRelease("velocity", version.trim()));
+        if (!resolved.available && !released && !allowUnavailable) {
           return errorText(
-            `No Velocity Javadocs for ${version}.` +
+            `No Velocity Javadocs for ${version} and Fill does not list it as a release.` +
               (resolved.suggestion
                 ? ` Try ${resolved.suggestion} or allowUnavailable=true.`
                 : "")
@@ -215,6 +217,7 @@ export function createServer(): McpServer {
             ? "latest"
             : resolved.version
           : version.trim();
+        const jd = released ? await resolveJavadocPath("velocity", effective) : undefined;
         const config = await saveProjectConfig(root, effective, {
           notes,
           platform: "velocity",
@@ -226,11 +229,38 @@ export function createServer(): McpServer {
           configFile: CONFIG_FILENAME,
           projectRoot: root,
           pinSource: target.source,
+          javadocAvailable: resolved.available,
+          javadocVersion: jd?.jdVersion,
+          javadocWarning: jd?.warning,
         });
       }
 
       if (plat === "folia") {
         const resolved = await resolveFoliaJavadocVersion(version);
+        const released =
+          !resolved.available && (await isKnownRelease("folia", resolved.version));
+        if (released) {
+          const jd = await resolveJavadocPath("folia", resolved.version);
+          const config = await saveProjectConfig(root, resolved.version, {
+            notes,
+            nms,
+            minecraftVersion,
+            platform: "folia",
+          });
+          return text({
+            ok: true,
+            message: `Pinned Folia ${resolved.version}${nms ? " (NMS/paperweight)" : ""}`,
+            config,
+            configFile: CONFIG_FILENAME,
+            projectRoot: root,
+            pinSource: target.source,
+            javadocAvailable: false,
+            javadocVersion: jd.jdVersion,
+            javadocWarning: jd.warning,
+            versionWarning: resolved.warning,
+            inputVersion: resolved.input ?? version,
+          });
+        }
         if (!resolved.available && !allowUnavailable) {
           return errorText(
             `No Folia Javadocs for ${resolved.version}.` +
@@ -297,7 +327,9 @@ export function createServer(): McpServer {
       }
 
       const resolved = await resolveJavadocVersion(version);
-      if (!resolved.available && !allowUnavailable) {
+      const paperReleased =
+        !resolved.available && (await isKnownRelease("paper", resolved.version));
+      if (!resolved.available && !paperReleased && !allowUnavailable) {
         return errorText(
           `No Javadocs at https://jd.papermc.io/paper/${resolved.version}/.` +
             (resolved.suggestion
@@ -306,7 +338,10 @@ export function createServer(): McpServer {
             (resolved.warning ? ` (${resolved.warning})` : "")
         );
       }
-      const effective = resolved.available ? resolved.version : resolved.version;
+      const effective = resolved.version;
+      const paperJd = paperReleased
+        ? await resolveJavadocPath("paper", effective)
+        : undefined;
       const config = await saveProjectConfig(root, effective, {
         notes,
         folia,
@@ -322,6 +357,8 @@ export function createServer(): McpServer {
         projectRoot: root,
         pinSource: target.source,
         javadocAvailable: resolved.available,
+        javadocVersion: paperJd?.jdVersion,
+        javadocWarning: paperJd?.warning,
         versionWarning: resolved.warning,
         inputVersion: resolved.input ?? version,
       });
@@ -385,19 +422,24 @@ export function createServer(): McpServer {
           return errorText(match.message);
         }
         const best = match.hit;
+        // Released but JD not yet published → keep the detected version (JD falls back at lookup).
+        const pinFor = async (
+          plat: Platform,
+          resolved: { available: boolean; version: string; suggestion?: string }
+        ): Promise<string> => {
+          if (resolved.available) return resolved.version;
+          if (await isKnownRelease(plat, best.version)) return best.version;
+          return resolved.suggestion ?? best.version;
+        };
         if (best.platform === "velocity") {
           const resolved = await resolveVelocityJavadocVersion(best.version);
-          const version = resolved.available
-            ? resolved.version
-            : resolved.suggestion ?? best.version;
+          const version = await pinFor("velocity", resolved);
           pinned = await saveProjectConfig(projectRoot, version, {
             platform: "velocity",
           });
         } else if (best.platform === "folia") {
           const resolved = await resolveFoliaJavadocVersion(best.version);
-          const version = resolved.available
-            ? resolved.version
-            : resolved.suggestion ?? best.version;
+          const version = await pinFor("folia", resolved);
           pinned = await saveProjectConfig(projectRoot, version, {
             platform: "folia",
             nms: best.nms,
@@ -412,18 +454,14 @@ export function createServer(): McpServer {
           const useFolia = Boolean(folia || best.folia);
           if (useFolia) {
             const resolved = await resolveFoliaJavadocVersion(best.version);
-            const version = resolved.available
-              ? resolved.version
-              : resolved.suggestion ?? best.version;
+            const version = await pinFor("folia", resolved);
             pinned = await saveProjectConfig(projectRoot, version, {
               platform: "folia",
               nms: best.nms,
             });
           } else {
             const resolved = await resolveJavadocVersion(best.version);
-            const version = resolved.available
-              ? resolved.version
-              : resolved.suggestion ?? best.version;
+            const version = await pinFor("paper", resolved);
             pinned = await saveProjectConfig(projectRoot, version, {
               folia: false,
               nms: best.nms,
@@ -520,7 +558,8 @@ export function createServer(): McpServer {
       const v = await requireVersion(projectRoot, version, platform);
       if ("isError" in v) return v;
       try {
-        const jdVer = javadocSearchVersion(v.platform, v.version);
+        const jd = await resolveJavadocPath(v.platform, v.version);
+        const jdVer = jd.jdVersion;
         const results = await searchApi(jdVer, query, {
           scope,
           limit,
@@ -535,6 +574,7 @@ export function createServer(): McpServer {
           platform: v.platform,
           version: v.version,
           javadocVersion: jdVer || "root",
+          ...(jd.warning ? { javadocWarning: jd.warning } : {}),
           projectRoot: "projectRoot" in v ? v.projectRoot : undefined,
           pinSource: "pinSource" in v ? v.pinSource : undefined,
           query,
@@ -582,19 +622,19 @@ export function createServer(): McpServer {
       const v = await requireVersion(args.projectRoot, args.version, args.platform);
       if ("isError" in v) return v;
       try {
+        const jd = await resolveJavadocPath(v.platform, v.version);
         const doc = await fetchClassDoc(
-          javadocSearchVersion(v.platform, v.version),
+          jd.jdVersion,
           args.className,
           args.packageName,
           v.platform
         );
-        return text(
-          formatClassDoc(doc, {
-            includeEnumConstants: args.includeAllEnumConstants,
-            maxMethods: args.maxMethods,
-            memberQuery: args.memberQuery,
-          })
-        );
+        const body = formatClassDoc(doc, {
+          includeEnumConstants: args.includeAllEnumConstants,
+          maxMethods: args.maxMethods,
+          memberQuery: args.memberQuery,
+        });
+        return text(jd.warning ? `> ⚠ ${jd.warning}\n\n${body}` : body);
       } catch (e) {
         return errorText(e instanceof Error ? e.message : String(e));
       }
@@ -848,10 +888,29 @@ export function createServer(): McpServer {
     {
       query: z.string(),
       limit: z.number().int().min(1).max(50).optional(),
+      projectRoot: z
+        .string()
+        .optional()
+        .describe("Pinned project: picks Adventure 5 (26.2+ / Velocity 4.x) or 4 (older lines)"),
+      major: z
+        .enum(["4", "5"])
+        .optional()
+        .describe("Force Adventure major (default: from pin, else 5)"),
     },
-    async ({ query, limit }) => {
+    async ({ query, limit, projectRoot, major }) => {
       try {
-        return text(await searchAdventure(query, limit ?? 20));
+        let adventureMajor: 4 | 5 | undefined = major ? (Number(major) as 4 | 5) : undefined;
+        if (!adventureMajor) {
+          const found = await findProjectRoot(projectRoot);
+          const cfg = found ? await loadProjectConfig(found.root) : null;
+          if (cfg) {
+            adventureMajor = adventureMajorFor(
+              cfg.platform,
+              cfg.platform === "velocity" ? cfg.velocityVersion ?? cfg.paperVersion : cfg.paperVersion
+            );
+          }
+        }
+        return text(await searchAdventure(query, limit ?? 20, { major: adventureMajor }));
       } catch (e) {
         return errorText(e instanceof Error ? e.message : String(e));
       }
@@ -914,15 +973,16 @@ export function createServer(): McpServer {
 
   server.tool(
     "mc_cache_stats",
-    "HTTP/Javadoc cache stats + sdkPackageVersion (use this to verify MCP reloaded — Cursor may omit extra tools from the catalog).",
+    "HTTP/Javadoc cache stats + sdkPackageVersion (use this to verify MCP reloaded). Fast — does not wait on network.",
     {},
     async () => {
-      const pruned = await pruneCache();
+      // Never await prune here — a stuck previous network call already freezes the MCP;
+      // prune is opportunistic and must not delay the health check.
+      void pruneCache().catch(() => undefined);
       const stats = await getCacheStats();
       return text({
         ...stats,
         bytesHuman: `${(stats.bytes / (1024 * 1024)).toFixed(2)} MiB`,
-        autoPruned: pruned,
         sdkPackageVersion: PKG.version,
         serverName: PKG.name,
         toolsHighlight: [
@@ -932,7 +992,7 @@ export function createServer(): McpServer {
           "mc_paper26_guide",
           "mc_explain_error",
         ],
-        note: "If sdkPackageVersion is stale or toolsHighlight tools are missing from GetMcpTools, kill duplicate node MCP processes and toggle the server Off→On (full Cursor restart if needed).",
+        note: "If sdkPackageVersion is stale or tools hang: kill stuck node MCP processes and toggle the server Off→On (full Cursor restart if needed). HTTP fetches time out after 15s.",
       });
     }
   );
@@ -996,7 +1056,7 @@ export function createServer(): McpServer {
       version: z
         .string()
         .optional()
-        .describe("e.g. 3.4.0, 4.0.0, latest (root docs)"),
+        .describe("e.g. 4.3.1, 3.4.0, latest (root docs). Unpublished JD (4.3.x) falls back to the closest published tree with javadocWarning."),
       scope: z.enum(["all", "types", "members", "packages"]).optional(),
       limit: z.number().int().min(1).max(100).optional(),
     },
@@ -1004,8 +1064,8 @@ export function createServer(): McpServer {
       const v = await requireVersion(projectRoot, version, "velocity");
       if ("isError" in v) return v;
       try {
-        const ver = v.version === "latest" ? "" : v.version;
-        const results = await searchApi(ver, query, {
+        const jd = await resolveJavadocPath("velocity", v.version);
+        const results = await searchApi(jd.jdVersion, query, {
           scope,
           limit,
           platform: "velocity",
@@ -1013,6 +1073,8 @@ export function createServer(): McpServer {
         return text({
           platform: "velocity",
           version: v.version,
+          javadocVersion: jd.jdVersion || "latest",
+          ...(jd.warning ? { javadocWarning: jd.warning } : {}),
           query,
           ...results,
         });
@@ -1036,13 +1098,15 @@ export function createServer(): McpServer {
       const v = await requireVersion(args.projectRoot, args.version, "velocity");
       if ("isError" in v) return v;
       try {
+        const jd = await resolveJavadocPath("velocity", v.version);
         const doc = await fetchClassDoc(
-          v.version === "latest" ? "" : v.version,
+          jd.jdVersion,
           args.className,
           args.packageName,
           "velocity"
         );
-        return text(formatClassDoc(doc, { maxMethods: args.maxMethods }));
+        const body = formatClassDoc(doc, { maxMethods: args.maxMethods });
+        return text(jd.warning ? `> ⚠ ${jd.warning}\n\n${body}` : body);
       } catch (e) {
         return errorText(e instanceof Error ? e.message : String(e));
       }
@@ -1225,7 +1289,7 @@ export function createServer(): McpServer {
           pluginName,
         });
         let config = null;
-        if (pin !== false && plat !== "velocity") {
+        if (pin !== false) {
           config = await saveProjectConfig(projectRoot, result.dependency.version, {
             platform: plat,
           });
@@ -1237,7 +1301,7 @@ export function createServer(): McpServer {
           versionWarning: result.versionWarning,
           config,
           next: [
-            "Add Gradle wrapper if missing: gradle wrapper --gradle-version 8.14.2",
+            `Add Gradle wrapper if missing: gradle wrapper --gradle-version ${result.gradleVersion}`,
             "Windows non-ASCII path: .\\build.ps1",
             "Otherwise: ./gradlew build",
           ],
@@ -1250,7 +1314,7 @@ export function createServer(): McpServer {
 
   server.tool(
     "mc_validate_build_gradle",
-    "Pre-build check: coords, Java, api-version, 1.26.x mistake, reobfJar on 26.1+, Gradle<9 with userdev 2.x.",
+    "Pre-build check: coords, Java, api-version, 1.26.x mistake, reobfJar on 26.1+, Gradle wrapper vs paperweight-userdev requirement, velocity-api 4.x Java 25.",
     {
       projectRoot: z.string(),
       expectedVersion: z.string().optional(),
@@ -1316,7 +1380,7 @@ export function createServer(): McpServer {
 
   server.tool(
     "mc_nms_search",
-    "Search Mojang-mapped NMS class names for the pinned project. For 26.1+ falls back to 1.21.11 with warning.",
+    "Search Mojang-named NMS classes for the pinned project. 26.1+: indexed from the official unobfuscated server.jar (source=server-jar); ≤1.21.11: Mojang mappings.",
     {
       query: z.string().describe("e.g. ServerPlayer, Abilities, ClientboundPlayerAbilitiesPacket"),
       projectRoot: z.string().describe("Project root with .mc-sdk.json pin"),
@@ -1336,7 +1400,7 @@ export function createServer(): McpServer {
 
   server.tool(
     "mc_nms_class",
-    "Get NMS class fields/methods for the pinned project. 26.1+ falls back to nearest mapped version with warning.",
+    "Get NMS class fields/methods (with types) for the pinned project. 26.1+: read from the official server.jar for that exact version; Paper-added members need paperDevBundle.",
     {
       className: z
         .string()
@@ -1354,8 +1418,10 @@ export function createServer(): McpServer {
           mcVersion: result.mcVersion,
           mappingsFallback: result.mappingsFallback,
           unobfuscatedRuntime: result.unobfuscatedRuntime,
+          source: result.source,
           mojangName: result.cls.mojangName,
           obfuscated: result.cls.obfuscated,
+          hierarchy: result.cls.hierarchy,
           memberCount: result.cls.members.length,
           members: result.cls.members.slice(0, 120),
           mappingsDevUrl: result.mappingsDevUrl,

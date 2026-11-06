@@ -205,7 +205,7 @@ ${versionLock}
 6. **26.x time:** \`mc_paper26_guide\` / \`mc_explain_error\` before \`World.setTime\` — check \`isFixedTime\` / world clock.
 7. **Threading:** never block the main/region thread with HTTP/DB/disk/heavy math — read \`mc_async_guide\` / \`docs/async.md\`. Snapshot → async → batched apply.
 8. **Commands:** \`mc_commands_guide\` before inventing executors/Brigadier.
-9. NMS path (last resort): \`mc_api_vs_nms\` → \`mc_resolve_dependency\` \`nms: true\` → optional \`mc_nms_*\` (on 26.x expect mappingsFallback — then **verify members in paperDevBundle / IDE**, not from the tool alone) → \`compileJava\`.
+9. NMS path (last resort): \`mc_api_vs_nms\` → \`mc_resolve_dependency\` \`nms: true\` → optional \`mc_nms_*\` (26.1+: names come from the official server.jar, \`source: server-jar\`; if \`mappingsFallback\` is set, **verify members in paperDevBundle / IDE**) → \`compileJava\`.
 10. On Windows with non-ASCII user paths, build via \`build.ps1\` / ASCII temp dir (\`mc_build_guidance\`) — do this early.
 11. Folia: if enabled, follow \`mc_folia_guide\` (region/entity/async schedulers).
 ${
@@ -214,7 +214,7 @@ ${
 ## NMS project rules (pinned nms: true)
 
 - No public Javadoc for \`net.minecraft.*\`. Truth = **paperDevBundle** sources after Gradle sync.
-- \`mc_nms_search\` / \`mc_nms_class\` on 26.1+ are **hints** (often fallback 1.21.11). Always re-check members in the IDE or via compile.
+- \`mc_nms_search\` / \`mc_nms_class\` on 26.1+ read the official server.jar for the pinned version (vanilla names). Paper-added members are not in it; \`mappingsFallback: true\` means hints only. Compile is the authority.
 - Use \`MOJANG_PRODUCTION\`; never \`reobfJar\` on 26.1+.
 `
     : ""

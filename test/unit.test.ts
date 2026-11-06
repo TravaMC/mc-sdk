@@ -370,7 +370,8 @@ describe("templates", () => {
     assert.ok(pw.includes("26.2.build.+"));
     assert.ok(pw.includes("MOJANG_PRODUCTION"));
     assert.ok(!/dependsOn\(tasks\.reobfJar\)/.test(pw));
-    assert.ok(pw.includes("2.0.0-beta.21"));
+    assert.ok(pw.includes("2.0.0-beta.24"));
+    assert.ok(pw.includes("Gradle 9.7.1+"));
     const nms = renderTemplate("nms_helper", { version: "26.2", className: "Auth" });
     assert.ok(nms.includes("ClientboundPlayerAbilitiesPacket"));
     assert.ok(!nms.includes("LightningBolt"));
@@ -386,7 +387,11 @@ describe("versioning", () => {
     assert.equal(n.version, "26.2");
     assert.equal(n.aliased, true);
     assert.ok(n.warning?.includes("26.2"));
-    assert.equal(pluginApiVersion("26.2"), "1.21");
+    // docs.papermc.io: api-version follows the calendar line (valid 1.13 – 26.x)
+    assert.equal(pluginApiVersion("26.2"), "26.2");
+    assert.equal(pluginApiVersion("26.3"), "26.3");
+    assert.equal(pluginApiVersion("26.1.2"), "26.1");
+    assert.equal(pluginApiVersion("1.21.4"), "1.21");
     assert.equal(paperApiDependencyNotation("26.2"), "io.papermc.paper:paper-api:26.2.build.+");
     assert.equal(
       paperApiDependencyNotation("1.21.1"),
@@ -402,7 +407,7 @@ describe("versioning", () => {
     } = await import("../src/versioning.js");
     assert.equal(requiresMojangProduction("26.2"), true);
     assert.equal(requiresMojangProduction("1.21.11"), false);
-    assert.equal(minGradleForUserdev("26.2"), "9.0");
+    assert.equal(minGradleForUserdev("26.2"), "9.7.1");
     assert.equal(paperDevBundleNotation("26.2"), "26.2.build.+");
   });
 });

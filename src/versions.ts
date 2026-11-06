@@ -53,7 +53,8 @@ export async function versionHasJavadoc(version: string): Promise<boolean> {
       `${javadocBaseUrlFor("paper", version)}type-search-index.js`,
       {
         method: "HEAD",
-        headers: { "User-Agent": "mc-sdk/3.0" },
+        headers: { "User-Agent": "mc-sdk/3.2" },
+        signal: AbortSignal.timeout(8_000),
       }
     );
     return res.ok;
@@ -94,7 +95,7 @@ export async function resolveJavadocVersion(requested: string): Promise<{
     }
   }
 
-  for (const c of ["26.2", "26.1", "1.21.11", "1.21.8", "1.21.4", "1.20.4"]) {
+  for (const c of ["26.3", "26.2", "26.1.2", "1.21.11", "1.21.8", "1.21.4", "1.20.4"]) {
     if (await versionHasJavadoc(c)) {
       return {
         version: trimmed,

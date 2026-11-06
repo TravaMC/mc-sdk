@@ -6,7 +6,31 @@ Do **not** invent BungeeCord / Spigot legacy chat APIs. Look up types with `mc_a
 
 Official docs: https://docs.papermc.io/adventure/  
 Component intro (Paper): https://docs.papermc.io/paper/dev/api/component-api/  
-Javadocs: https://jd.papermc.io/adventure/
+Javadocs: https://jd.papermc.io/adventure/ (5.x) · https://jd.advntr.dev/api/4.26.1/ (last 4.x)
+
+## Which Adventure version?
+
+| Server line | Adventure | `mc_adventure_search` |
+|-------------|-----------|-----------------------|
+| Paper / Purpur / Folia **26.2+** (incl. 26.3) | **5.x** (5.2.0) | default, or `major=5` |
+| **Velocity 4.x** (4.0 – 4.3.x) | **5.x** (5.2.0) | default, or `major=5` |
+| Paper 26.1.x, 1.21.x · Velocity 3.x | 4.x (4.26.1) | `major=4` (picked automatically from the pin) |
+
+## Adventure 5 (Paper 26.2+, Velocity 4.x)
+
+Adventure 5 removed API that 4.x had deprecated. Migration guide: https://docs.papermc.io/adventure/migration/adventure-4.x/
+
+- Requires Java 21+; most `@NonExtendable` types are now **sealed** — no custom `Component` implementations (use the `VirtualComponent` API).
+- **Click events:** `ClickEvent` is a typed interface and `ClickEvent.Action` is no longer an enum. `ClickEvent.create(Action, String)` and `ClickEvent#value()` are gone — use `ClickEvent.openUrl(…)`, `runCommand(…)`, `suggestCommand(…)`, `copyToClipboard(…)` or the payload-based `create`; read `payload()`.
+- **Messages:** `MessageType` and every `Audience#sendMessage(Identity/Identified, …)` overload were removed — send plain system messages or signed messages.
+- **Joining:** `Component.join(…)` without a `JoinConfiguration` is gone — use `Component.join(JoinConfiguration, …)` or `Component.textOfChildren(…)`.
+- **Builders:** `BuildableComponent` removed — use `component.toBuilder()`. `AbstractComponent` removed.
+- **Boss bars:** `percent` API removed — use `progress`.
+- `Style.of(…)` static helpers removed (use the named replacements); `ChatType#key` is nullable.
+- `adventure-text-serializer-gson-legacy-impl` → `adventure-text-serializer-json-legacy-impl`; `adventure-extra-kotlin` removed for now.
+- Paper 26.2: `BookMeta` no longer extends Adventure `Book` — use `BookMeta`'s own page methods instead of the removed builder.
+
+When code compiled against 26.1 / Velocity 3.x stops compiling on 26.2+ / Velocity 4.x, check this list first, then `mc_adventure_search` with the new pin.
 
 ## Hard rule
 

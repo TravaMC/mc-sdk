@@ -21,7 +21,8 @@ interface FillProjectResponse {
   versions: Record<string, string[]>;
 }
 
-const KNOWN_JD = ["26.1.2", "26.1", "1.21.8", "1.21.4", "1.20.6"];
+/** Newest first. jd.papermc.io/folia/ itself redirects to the newest published tree. */
+const KNOWN_JD = ["26.2", "26.1.2", "1.21.11", "1.21.8", "1.21.4", "1.20.6"];
 
 export async function listFoliaVersionsFromFill(): Promise<string[]> {
   const text = await fetchText("https://fill.papermc.io/v3/projects/folia", {
@@ -54,7 +55,8 @@ export async function foliaHasJavadoc(version: string): Promise<boolean> {
   try {
     const res = await fetch(url, {
       method: "HEAD",
-      headers: { "User-Agent": "mc-sdk/3.0" },
+      headers: { "User-Agent": "mc-sdk/3.2" },
+      signal: AbortSignal.timeout(8_000),
     });
     return res.ok;
   } catch {
@@ -103,7 +105,7 @@ export async function resolveFoliaJavadocVersion(requested: string): Promise<{
   return {
     version: trimmed,
     available: false,
-    suggestion: "26.1.2",
+    suggestion: KNOWN_JD[0],
     warning: norm.warning,
     input: norm.input,
   };
@@ -112,11 +114,11 @@ export async function resolveFoliaJavadocVersion(requested: string): Promise<{
 export async function listFoliaVersionsWithJavadoc(
   limit = 20
 ): Promise<FoliaVersionInfo[]> {
-  const fromFill = await listFoliaVersionsFromFill();
-  const candidates = [...new Set([...KNOWN_JD, ...fromFill, "latest"])].slice(
-    0,
-    limit
-  );
+  const fromFill = await listFoliaVersionsFromFill().catch(() => [] as string[]);
+  const candidates = [
+    "latest",
+    ...[...new Set([...fromFill, ...KNOWN_JD])].sort((a, b) => compareLoose(b, a)),
+  ].slice(0, limit);
   const results: FoliaVersionInfo[] = [];
   const batch = 6;
   for (let i = 0; i < candidates.length; i += batch) {

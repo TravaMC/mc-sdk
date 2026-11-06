@@ -19,7 +19,7 @@ export type VersionSource = z.infer<typeof versionSourceSchema>;
 
 export const ASK_USER_FOR_VERSION =
   "STOP. Do not invent or guess a Minecraft/Paper/Folia/Purpur/Velocity version. " +
-  "Ask the user which platform and version to target (e.g. Paper 26.2, Paper 1.21.1, Velocity 3.4.0). " +
+  "Ask the user which platform and version to target (e.g. Paper 26.3, Purpur 26.3, Paper 1.21.11, Velocity 4.3.1). " +
   "Only after they answer: call mc_set_version with version=<their answer> and versionSource=user_stated (projectRoot optional — uses cwd). " +
   "If build files exist, you may run mc_detect_version (without pin), show results, and pin only after they confirm " +
   "(versionSource=user_confirmed_detection or pin with userConfirmedVersion). " +
@@ -36,10 +36,12 @@ HARD RULE — version must come from the user (or their confirmed detection), ne
 TEXT / UI — Adventure only (Paper and Velocity, including LimboAPI):
 - Use Component / Audience / MiniMessage. Read mc_adventure_guide (and mc_velocity_guide on proxy).
 - Do not use net.md_5.bungee.api.chat.* or ChatColor/§ as the primary API.
+- Paper/Purpur/Folia 26.2+ and Velocity 4.x ship Adventure 5 (deprecated ClickEvent/HoverEvent/BookMeta APIs removed) — mc_adventure_search follows the pin.
 
 26.x / large classes:
 - World time: mc_paper26_guide + mc_get_class memberQuery=isFixedTime|setTime. Exception text: mc_explain_error.
 - Default mc_get_class truncates huge types — always pass memberQuery for the member you need.
+- javadocWarning in a result = the pinned release has no published Javadoc yet (e.g. Velocity 4.3.x, Folia 26.3); the closest tree was searched — confirm new members by compiling.
 - Events: read deprecated/prefer/warnings from mc_search_api / mc_find_event (e.g. AsyncPlayerSpawnLocationEvent over Spigot PlayerSpawnLocationEvent). Never pick a deprecated Spigot event when prefer is set.
 
 Workflow: ask/confirm version (or use existing pin) → mc_set_version if needed → mc_resolve_dependency / mc_search_api.`;

@@ -13,7 +13,7 @@ Pin with:
 ```text
 mc_set_version
   platform: purpur
-  version: 26.2   # calendar id (alias: 1.26.2 → 26.2)
+  version: 26.3   # calendar id (alias: 1.26.3 → 26.3)
 ```
 
 Then `mc_search_api` / `mc_get_class` use Purpur JD. Prefer `org.purpurmc.*` hits and Purpur-extended Bukkit methods.
@@ -31,12 +31,14 @@ repositories {
     maven("https://repo.purpurmc.org/snapshots")
 }
 dependencies {
-    compileOnly("org.purpurmc.purpur:purpur-api:26.2.build.+")
-    // or exact: 26.2.build.2609-stable (from mc_resolve_dependency)
+    compileOnly("org.purpurmc.purpur:purpur-api:26.3.build.+")
+    // or exact: 26.3.build.2656-stable (from mc_resolve_dependency)
 }
 ```
 
-Legacy (~1.21.x) still uses `1.21.1-R0.1-SNAPSHOT`. Do **not** invent `1.26.2-R0.1-SNAPSHOT`.
+Legacy (~1.21.x) still uses `1.21.1-R0.1-SNAPSHOT`. Do **not** invent `1.26.3-R0.1-SNAPSHOT`.
+
+Purpur 26.2+ inherits Paper's **Adventure 5** and the 26.2/26.3 API changes — read `mc_paper26_guide` when upgrading.
 
 `purpur-api` includes Paper / Spigot / Bukkit APIs. Using only `paper-api` is fine if you do **not** call Purpur-specific methods (plugin still runs on Purpur).
 

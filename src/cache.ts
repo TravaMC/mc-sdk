@@ -128,7 +128,11 @@ export interface FetchTextOptions {
   maxStaleMs?: number;
   bypassCache?: boolean;
   retries?: number;
+  /** Per-attempt network timeout (default 15s). Prevents MCP tools from hanging forever. */
+  timeoutMs?: number;
 }
+
+const DEFAULT_FETCH_TIMEOUT_MS = 15_000;
 
 /**
  * HTTP GET with automatic cache:
@@ -162,6 +166,7 @@ export async function fetchText(
   const cacheKey = options?.cacheKey ?? `url:${url}`;
   const ttlMs = options?.ttlMs ?? DEFAULT_TTL_MS;
   const maxStaleMs = options?.maxStaleMs ?? DEFAULT_MAX_STALE_MS;
+  const timeoutMs = options?.timeoutMs ?? DEFAULT_FETCH_TIMEOUT_MS;
 
   let staleEntry: CacheEntry<string> | undefined;
   let staleValue: string | undefined;
@@ -175,12 +180,14 @@ export async function fetchText(
     }
   }
 
-  const retries = options?.retries ?? 3;
+  const retries = options?.retries ?? 2;
   let lastError: unknown;
   for (let attempt = 0; attempt < retries; attempt++) {
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), timeoutMs);
     try {
       const headers: Record<string, string> = {
-        "User-Agent": "mc-sdk/3.0 (+Paper/Purpur/Velocity MCP)",
+        "User-Agent": "mc-sdk/3.2 (+Paper/Purpur/Velocity MCP)",
         Accept: "*/*",
       };
       if (staleEntry?.etag) headers["If-None-Match"] = staleEntry.etag;
@@ -188,7 +195,7 @@ export async function fetchText(
         headers["If-Modified-Since"] = staleEntry.lastModified;
       }
 
-      const res = await fetch(url, { headers });
+      const res = await fetch(url, { headers, signal: ac.signal });
 
       if (res.status === 304 && staleValue != null && staleEntry) {
         await touchCached(cacheKey, staleEntry);
@@ -207,8 +214,13 @@ export async function fetchText(
       });
       return text;
     } catch (e) {
-      lastError = e;
-      await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
+      lastError =
+        e instanceof Error && e.name === "AbortError"
+          ? new Error(`Timeout after ${timeoutMs}ms`)
+          : e;
+      await new Promise((r) => setTimeout(r, 200 * (attempt + 1)));
+    } finally {
+      clearTimeout(timer);
     }
   }
 

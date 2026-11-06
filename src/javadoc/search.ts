@@ -244,7 +244,8 @@ export async function searchApi(
       typed.some((t) => t.name.endsWith("Event")));
 
   if (shouldEnrich && (scope === "all" || scope === "types")) {
-    typed = await enrichTypeAnnotations(version, platform, typed.slice(0, 12));
+    // Cap + parallel: sequential hung fetches used to freeze the whole MCP for minutes.
+    typed = await enrichTypeAnnotations(version, platform, typed.slice(0, 6));
     typed.sort(
       (a, b) =>
         Number(Boolean(a.deprecated)) - Number(Boolean(b.deprecated)) ||
@@ -312,60 +313,61 @@ async function enrichTypeAnnotations(
   platform: Platform,
   hits: Array<TypeHit & { score: number }>
 ): Promise<Array<TypeHit & { score: number }>> {
-  const out: Array<TypeHit & { score: number }> = [];
-  for (const hit of hits) {
-    if (hit.deprecated || hit.prefer || !hit.name.endsWith("Event")) {
-      out.push(hit);
-      continue;
-    }
-    try {
-      const html = await fetchText(hit.url, {
-        cacheKey: `jd:${platform}:${version || "root"}:page:${hit.package ?? ""}:${hit.name}`,
-        ttlMs: 24 * 60 * 60 * 1000,
-      });
-      const sig =
-        html.match(/class="type-signature"[^>]*>([\s\S]*?)<\/div>/i)?.[1]?.replace(
-          /<[^>]+>/g,
-          " "
-        ) ||
-        html.match(/@Deprecated[\s\S]{0,180}?class\s+\w+/)?.[0] ||
-        "";
-      const block =
-        html.match(
-          /class="deprecation-block"[^>]*>([\s\S]*?)<\/div>\s*<div class="description"/i
-        )?.[1]?.replace(/<[^>]+>/g, " ") ||
-        html.match(
-          /class="deprecation-comment"[^>]*>([\s\S]*?)<\/div>/i
-        )?.[1]?.replace(/<[^>]+>/g, " ") ||
-        "";
-      const parsed = parseDeprecationMeta(
-        sig.replace(/\s+/g, " ").trim(),
-        block.replace(/\s+/g, " ").trim()
-      );
-      const merged = mergeAnnotations(
-        curatedAnnotation(hit.name, hit.package),
-        parsed,
-        {
-          deprecated: hit.deprecated,
-          experimental: hit.experimental,
-          forRemoval: hit.forRemoval,
-          since: hit.since,
-          prefer: hit.prefer,
-          replacement: hit.replacement,
-          warning: hit.warning,
-          usageNote: hit.usageNote,
-        }
-      );
-      out.push({
-        ...hit,
-        ...flattenAnnotation(merged),
-        score: hit.score + annotationScoreBoost(merged, hit.package),
-      });
-    } catch {
-      out.push(hit);
-    }
-  }
-  return out;
+  return Promise.all(
+    hits.map(async (hit) => {
+      if (hit.deprecated || hit.prefer || !hit.name.endsWith("Event")) {
+        return hit;
+      }
+      try {
+        const html = await fetchText(hit.url, {
+          cacheKey: `jd:${platform}:${version || "root"}:page:${hit.package ?? ""}:${hit.name}`,
+          ttlMs: 24 * 60 * 60 * 1000,
+          timeoutMs: 8_000,
+          retries: 1,
+        });
+        const sig =
+          html.match(/class="type-signature"[^>]*>([\s\S]*?)<\/div>/i)?.[1]?.replace(
+            /<[^>]+>/g,
+            " "
+          ) ||
+          html.match(/@Deprecated[\s\S]{0,180}?class\s+\w+/)?.[0] ||
+          "";
+        const block =
+          html.match(
+            /class="deprecation-block"[^>]*>([\s\S]*?)<\/div>\s*<div class="description"/i
+          )?.[1]?.replace(/<[^>]+>/g, " ") ||
+          html.match(
+            /class="deprecation-comment"[^>]*>([\s\S]*?)<\/div>/i
+          )?.[1]?.replace(/<[^>]+>/g, " ") ||
+          "";
+        const parsed = parseDeprecationMeta(
+          sig.replace(/\s+/g, " ").trim(),
+          block.replace(/\s+/g, " ").trim()
+        );
+        const merged = mergeAnnotations(
+          curatedAnnotation(hit.name, hit.package),
+          parsed,
+          {
+            deprecated: hit.deprecated,
+            experimental: hit.experimental,
+            forRemoval: hit.forRemoval,
+            since: hit.since,
+            prefer: hit.prefer,
+            replacement: hit.replacement,
+            warning: hit.warning,
+            usageNote: hit.usageNote,
+          }
+        );
+        return {
+          ...hit,
+          ...flattenAnnotation(merged),
+          score: hit.score + annotationScoreBoost(merged, hit.package),
+        };
+      } catch {
+        return hit;
+      }
+    })
+  );
 }
 
 export async function findType(

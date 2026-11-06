@@ -51,15 +51,36 @@ export function isModernPaperLine(version: string): boolean {
 /**
  * plugin.yml api-version.
  * Classic: 1.21.4 → 1.21
- * Modern Paper 26.x still targets Bukkit API line 1.21 for now.
+ * Modern calendar line: 26.3 → 26.3, 26.1.2 → 26.1 (docs.papermc.io: valid range 1.13 – 26.x;
+ * a server older than api-version refuses to load the plugin, so major.minor is the safe value).
  */
 export function pluginApiVersion(version: string): string {
   const v = normalizeGameVersion(version).version;
-  if (isModernPaperLine(v)) return "1.21";
   const parts = v.split(".");
   if (parts.length >= 2) return `${parts[0]}.${parts[1]}`;
   return v;
 }
+
+/**
+ * Min Java for velocity-api (fallback when Fill is unreachable).
+ * velocity-api 4.x Gradle metadata: org.gradle.jvm.version 25; 3.5.x → 21; 3.3/3.4 → 17.
+ */
+export function velocityMinJava(version: string): number {
+  const v = version.trim();
+  if (!v || v === "latest" || v === "root") return 25;
+  const [maj, min] = v.split(".").map((p) => Number.parseInt(p, 10) || 0);
+  if (maj >= 4) return 25;
+  if (maj === 3 && min >= 5) return 21;
+  if (maj === 3 && min >= 3) return 17;
+  return 11;
+}
+
+/** Offline fallbacks — live values come from src/toolchain.ts (plugin portal / services.gradle.org). */
+export const FALLBACK_USERDEV_VERSION = "2.0.0-beta.24";
+/** paperweight-userdev 2.0.0-beta.24 declares org.gradle.plugin.api-version 9.7.1. */
+export const FALLBACK_USERDEV_MIN_GRADLE = "9.7.1";
+export const FALLBACK_GRADLE_VERSION = "9.9.0";
+export const FOOJAY_RESOLVER_VERSION = "1.0.0";
 
 /**
  * Minimum language level for compiling against that server line.
@@ -85,8 +106,8 @@ export function gradleJvmAdvice(minJava: number): string {
   if (minJava >= 25) {
     return [
       "Compile with JavaLanguageVersion.of(25) via toolchain (foojay resolver).",
-      "Run Gradle itself on JDK 21 if Gradle 8.14+ misbehaves on JDK 25 — toolchain still downloads 25 for compilation.",
-      "Do not set JAVA_HOME to 25 for the Gradle daemon unless your Gradle version officially supports it.",
+      "Gradle 9.1.0+ officially runs on JDK 25, so the daemon may use JDK 21 or 25.",
+      "Gradle 8.x cannot run on JDK 25 — upgrade the wrapper (paperweight-userdev 2.0.0-beta.24 needs Gradle 9.7.1+).",
     ].join(" ");
   }
   if (minJava >= 21) {
@@ -146,19 +167,39 @@ export function requiresMojangProduction(version: string): boolean {
   return false;
 }
 
-/** paperweight-userdev 2.x declares Gradle plugin-api 9.0.0 — needs Gradle 9+. */
+/**
+ * Offline default userdev for a server line. Live latest: toolchain.latestUserdev().
+ * 2.0.0-beta.1…23 declare Gradle plugin-api 9.0.0; beta.24 declares 9.7.1.
+ */
 export function defaultUserdevPluginVersion(version: string): string {
   const v = normalizeGameVersion(version).version;
   if (isModernPaperLine(v) || requiresMojangProduction(v)) {
-    return "2.0.0-beta.21";
+    return FALLBACK_USERDEV_VERSION;
   }
   return "1.7.7";
 }
 
+/** Minimum Gradle for a given paperweight-userdev plugin version. */
+export function minGradleForUserdevPlugin(plugin: string): string {
+  if (!plugin.startsWith("2.")) return "8.8";
+  const beta = /^2\.0\.0-beta\.(\d+)$/.exec(plugin);
+  if (beta && Number.parseInt(beta[1], 10) < 24) return "9.0";
+  return FALLBACK_USERDEV_MIN_GRADLE;
+}
+
 export function minGradleForUserdev(version: string): string {
-  const plugin = defaultUserdevPluginVersion(version);
-  if (plugin.startsWith("2.")) return "9.0";
-  return "8.8";
+  return minGradleForUserdevPlugin(defaultUserdevPluginVersion(version));
+}
+
+/** Compare dotted Gradle versions (9.7.1 vs 9.10). */
+export function compareGradleVersions(a: string, b: string): number {
+  const pa = a.split(".").map((x) => Number.parseInt(x, 10) || 0);
+  const pb = b.split(".").map((x) => Number.parseInt(x, 10) || 0);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = (pa[i] ?? 0) - (pb[i] ?? 0);
+    if (d) return d;
+  }
+  return 0;
 }
 
 export function repoUrlFor(platform: Platform): string {

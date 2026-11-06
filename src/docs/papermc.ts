@@ -22,6 +22,7 @@ export const DOCS_CATALOG: Array<{
   { title: "Adventure MiniMessage", path: "/adventure/minimessage/", tags: ["adventure", "minimessage"] },
   { title: "Adventure audiences", path: "/adventure/audiences/", tags: ["adventure", "audience"] },
   { title: "Adventure serializers", path: "/adventure/serializer/", tags: ["adventure", "serializer", "legacy"] },
+  { title: "Migrating from Adventure 4.x to 5.x", path: "/adventure/migration/adventure-4.x/", tags: ["adventure", "migration", "adventure5", "clickevent", "26.2", "velocity"] },
   { title: "Folia support", path: "/paper/dev/folia-support/", tags: ["folia", "region", "scheduler"] },
   { title: "Folia home", path: "/folia/", tags: ["folia"] },
   { title: "Folia FAQ", path: "/folia/faq/", tags: ["folia", "faq"] },

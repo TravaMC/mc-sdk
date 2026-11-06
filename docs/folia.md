@@ -4,7 +4,7 @@ Folia is a Paper fork that **regionizes** the world across threads. Code that as
 
 Official guide: https://docs.papermc.io/paper/dev/folia-support/  
 Overview: https://docs.papermc.io/folia/  
-Javadocs: pin `platform=folia` → https://jd.papermc.io/folia/
+Javadocs: pin `platform=folia` → https://jd.papermc.io/folia/ (newest published: 26.2; Folia **26.3** is released but its Javadoc lags — mc-sdk searches 26.2 and returns `javadocWarning`)
 
 ## Declare support
 

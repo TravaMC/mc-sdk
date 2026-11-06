@@ -2,18 +2,29 @@ import { fetchText, getCachedText, setCachedText } from "../cache.js";
 import { guessMinecraftVersion } from "../config.js";
 import { isModernPaperLine, normalizeGameVersion } from "../versioning.js";
 import * as cheerio from "cheerio";
+import { buildIndexFromServerJar, sha1 } from "./serverJar.js";
+import { FALLBACK_USERDEV_MIN_GRADLE, FALLBACK_USERDEV_VERSION } from "../versioning.js";
 
 export interface MappingClass {
   mojangName: string;
   obfuscated: string;
-  members: Array<{ kind: "field" | "method"; mojang: string; obfuscated: string }>;
+  /** "extends X implements Y" (server-jar index only) */
+  hierarchy?: string;
+  members: Array<{
+    kind: "field" | "method";
+    mojang: string;
+    obfuscated: string;
+    /** Full declaration, e.g. "public void tick()" (types from the jar / mapping file) */
+    signature?: string;
+  }>;
 }
 
 export interface MappingHit {
   mojangName: string;
   obfuscated: string;
   score: number;
-  mappingsDevUrl: string;
+  /** mappings.dev page (only exists for obfuscated <=1.21.11 versions) */
+  mappingsDevUrl?: string;
 }
 
 export interface MappingsResolve {
@@ -26,6 +37,8 @@ export interface MappingsResolve {
   warning?: string;
   /** Mojang calendar line has no obfuscation / no server_mappings */
   unobfuscatedRuntime?: boolean;
+  /** Where names come from: Mojang mapping file, the unobfuscated server.jar, or a fallback mapping file */
+  source: "mojang-mappings" | "server-jar" | "fallback-mappings";
 }
 
 interface VersionManifest {
@@ -34,6 +47,7 @@ interface VersionManifest {
 
 interface VersionJson {
   downloads: {
+    server?: { url: string; sha1?: string; size?: number };
     server_mappings?: { url: string };
     client_mappings?: { url: string };
   };
@@ -79,23 +93,30 @@ export async function resolveMinecraftId(paperOrMc: string): Promise<string> {
   throw new Error(`No Mojang version match for "${paperOrMc}"`);
 }
 
-async function versionHasServerMappings(
+async function loadVersionJson(
   mcVersion: string,
   manifest: VersionManifest
-): Promise<boolean> {
+): Promise<VersionJson | null> {
   const entry = manifest.versions.find((v) => v.id === mcVersion);
-  if (!entry) return false;
+  if (!entry) return null;
   try {
-    const versionJson = JSON.parse(
+    return JSON.parse(
       await fetchText(entry.url, {
         cacheKey: `mojang:version_json:${mcVersion}`,
         ttlMs: 7 * 24 * 60 * 60 * 1000,
       })
     ) as VersionJson;
-    return Boolean(versionJson.downloads.server_mappings?.url);
   } catch {
-    return false;
+    return null;
   }
+}
+
+async function versionHasServerMappings(
+  mcVersion: string,
+  manifest: VersionManifest
+): Promise<boolean> {
+  const json = await loadVersionJson(mcVersion, manifest);
+  return Boolean(json?.downloads.server_mappings?.url);
 }
 
 /**
@@ -119,9 +140,32 @@ export async function resolveMappingsTarget(
       mcVersion: requested,
       fallback: false,
       unobfuscatedRuntime: isModernPaperLine(requested) && requiresUnobfuscated(requested),
+      source: "mojang-mappings",
     };
   }
 
+  // 26.1+: no mapping file because the server jar already carries real names — index the jar.
+  if (requiresUnobfuscated(requested)) {
+    const json = await loadVersionJson(requested, manifest);
+    if (json?.downloads.server?.url) {
+      return {
+        requested,
+        mcVersion: requested,
+        fallback: false,
+        unobfuscatedRuntime: true,
+        source: "server-jar",
+      };
+    }
+  }
+
+  return mappingsFallbackTarget(requested, manifest);
+}
+
+async function mappingsFallbackTarget(
+  requested: string,
+  manifest: VersionManifest,
+  reason?: string
+): Promise<MappingsResolve> {
   for (const id of MAPPINGS_FALLBACK_CHAIN) {
     if (!(await versionHasServerMappings(id, manifest))) continue;
     const unobfuscated = requiresUnobfuscated(requested) || isModernPaperLine(requested);
@@ -130,8 +174,9 @@ export async function resolveMappingsTarget(
       mcVersion: id,
       fallback: true,
       unobfuscatedRuntime: unobfuscated,
+      source: "fallback-mappings",
       warning: unobfuscated
-        ? `No Mojang server_mappings for ${requested} (26.1+ is Mojang-named / unobfuscated). Index shown is ${id} — HINTS ONLY. Next: open the class from paperDevBundle in the IDE (Go to Declaration) or compileJava; do not trust these members blindly.`
+        ? `${reason ? reason + " " : ""}Could not index the ${requested} server.jar, so names below come from ${id} mappings — HINTS ONLY. Open the class from paperDevBundle in the IDE (Go to Declaration) or compileJava; do not trust these members blindly.`
         : `No server_mappings for ${requested}; using ${id} as nearest mapping file (hints only). Verify against paperDevBundle.`,
     };
   }
@@ -178,7 +223,8 @@ export async function loadServerMappings(mcVersion: string): Promise<string> {
   if (!mapUrl) throw new Error(`No server_mappings for ${mcVersion}`);
 
   const text = await fetch(mapUrl, {
-    headers: { "User-Agent": "mc-sdk/3.0" },
+    headers: { "User-Agent": "mc-sdk/3.2" },
+    signal: AbortSignal.timeout(60_000),
   }).then(async (r) => {
     if (!r.ok) throw new Error(`HTTP ${r.status} downloading mappings`);
     return r.text();
@@ -188,12 +234,74 @@ export async function loadServerMappings(mcVersion: string): Promise<string> {
   return text;
 }
 
+const SERVER_INDEX_TTL_MS = 365 * 24 * 60 * 60 * 1000;
+
+async function loadManifest(): Promise<VersionManifest> {
+  return JSON.parse(
+    await fetchText("https://piston-meta.mojang.com/mc/game/version_manifest_v2.json", {
+      cacheKey: "mojang:version_manifest",
+      ttlMs: 6 * 60 * 60 * 1000,
+    })
+  ) as VersionManifest;
+}
+
+/**
+ * Index of an unobfuscated (26.1+) server: downloads Mojang's server.jar once (~60 MB),
+ * verifies sha1, reads class/field/method names, caches the text under ~/.cache/mc-sdk.
+ */
+export async function loadServerJarIndex(mcVersion: string): Promise<string> {
+  const cacheKey = `mojang:server_jar_index:v1:${mcVersion}`;
+  const cached = await getCachedText(cacheKey, SERVER_INDEX_TTL_MS);
+  if (cached) return cached;
+
+  const json = await loadVersionJson(mcVersion, await loadManifest());
+  const server = json?.downloads.server;
+  if (!server?.url) throw new Error(`No server.jar download for ${mcVersion}`);
+
+  const jar = await fetch(server.url, {
+    headers: { "User-Agent": "mc-sdk/3.2" },
+    signal: AbortSignal.timeout(180_000),
+  }).then(async (r) => {
+    if (!r.ok) throw new Error(`HTTP ${r.status} downloading server.jar`);
+    return Buffer.from(await r.arrayBuffer());
+  });
+  if (server.sha1 && sha1(jar) !== server.sha1) {
+    throw new Error(`server.jar sha1 mismatch for ${mcVersion}`);
+  }
+  const text = buildIndexFromServerJar(jar, mcVersion);
+  await setCachedText(cacheKey, text);
+  return text;
+}
+
+/** Load names for a resolved target; if the server.jar index fails, fall back to the mapping chain. */
+async function loadTargetText(
+  target: MappingsResolve
+): Promise<{ text: string; target: MappingsResolve }> {
+  if (target.source !== "server-jar") {
+    return { text: await loadServerMappings(target.mcVersion), target };
+  }
+  try {
+    return { text: await loadServerJarIndex(target.mcVersion), target };
+  } catch (e) {
+    const fb = await mappingsFallbackTarget(
+      target.requested,
+      await loadManifest(),
+      `(${e instanceof Error ? e.message : String(e)})`
+    );
+    return { text: await loadServerMappings(fb.mcVersion), target: fb };
+  }
+}
+
 function parseClassBlocks(mappings: string): Map<string, MappingClass> {
   const map = new Map<string, MappingClass>();
   const lines = mappings.split(/\r?\n/);
   let current: MappingClass | null = null;
 
   for (const line of lines) {
+    if (current && (line.startsWith("# extends ") || line.startsWith("# implements "))) {
+      current.hierarchy = line.slice(2).trim();
+      continue;
+    }
     if (!line || line.startsWith("#")) continue;
     if (!line.startsWith("    ") && line.includes(" -> ")) {
       const [left, right] = line.split(" -> ");
@@ -215,12 +323,12 @@ function parseClassBlocks(mappings: string): Map<string, MappingClass> {
         const name = mojang.includes(" ")
           ? mojang.slice(mojang.lastIndexOf(" ") + 1)
           : mojang;
-        current.members.push({ kind: "method", mojang: name, obfuscated });
+        current.members.push({ kind: "method", mojang: name, obfuscated, signature: mojang });
       } else {
         const name = mojang.includes(" ")
           ? mojang.slice(mojang.lastIndexOf(" ") + 1)
           : mojang;
-        current.members.push({ kind: "field", mojang: name, obfuscated });
+        current.members.push({ kind: "field", mojang: name, obfuscated, signature: mojang });
       }
     }
   }
@@ -238,10 +346,10 @@ export async function searchNms(
   mappingsFallback?: boolean;
   warning?: string;
   unobfuscatedRuntime?: boolean;
+  source: MappingsResolve["source"];
   nextSteps: string[];
 }> {
-  const target = await resolveMappingsTarget(paperOrMcVersion);
-  const text = await loadServerMappings(target.mcVersion);
+  const { text, target } = await loadTargetText(await resolveMappingsTarget(paperOrMcVersion));
   const q = query.trim().toLowerCase();
   const hits: MappingHit[] = [];
   const seen = new Set<string>();
@@ -266,7 +374,8 @@ export async function searchNms(
       mojangName,
       obfuscated,
       score,
-      mappingsDevUrl: mappingsDevClassUrl(target.mcVersion, mojangName),
+      mappingsDevUrl:
+        target.source === "server-jar" ? undefined : mappingsDevClassUrl(target.mcVersion, mojangName),
     });
   }
 
@@ -278,6 +387,7 @@ export async function searchNms(
     mappingsFallback: target.fallback || undefined,
     warning: target.warning,
     unobfuscatedRuntime: target.unobfuscatedRuntime,
+    source: target.source,
     nextSteps: target.fallback
       ? [
           "Treat hits as class-name hints only",
@@ -285,10 +395,16 @@ export async function searchNms(
           "Open the type from paperDevBundle in the IDE (Go to Declaration) and copy real members",
           "Confirm with compileJava before shipping",
         ]
-      : [
-          "Prefer Paper API first (mc_api_vs_nms)",
-          "Still verify critical members against paperDevBundle for your pin",
-        ],
+      : target.source === "server-jar"
+        ? [
+            "Names come from the official unobfuscated server.jar for this exact version (vanilla classes)",
+            "Paper patches/CraftBukkit add members not listed here — paperDevBundle in the IDE is the full picture",
+            "Prefer Paper API first (mc_api_vs_nms); confirm with compileJava",
+          ]
+        : [
+            "Prefer Paper API first (mc_api_vs_nms)",
+            "Still verify critical members against paperDevBundle for your pin",
+          ],
   };
 }
 
@@ -299,15 +415,15 @@ export async function getNmsClass(
   requestedVersion: string;
   mcVersion: string;
   cls: MappingClass;
-  mappingsDevUrl: string;
+  mappingsDevUrl?: string;
   mappingsDevExcerpt?: string;
   mappingsFallback?: boolean;
   warning?: string;
   unobfuscatedRuntime?: boolean;
+  source: MappingsResolve["source"];
   nextSteps: string[];
 }> {
-  const target = await resolveMappingsTarget(paperOrMcVersion);
-  const text = await loadServerMappings(target.mcVersion);
+  const { text, target } = await loadTargetText(await resolveMappingsTarget(paperOrMcVersion));
   const blocks = parseClassBlocks(text);
 
   const cls =
@@ -326,9 +442,10 @@ export async function getNmsClass(
     );
   }
 
-  const url = mappingsDevClassUrl(target.mcVersion, cls.mojangName);
+  const url =
+    target.source === "server-jar" ? undefined : mappingsDevClassUrl(target.mcVersion, cls.mojangName);
   let mappingsDevExcerpt: string | undefined;
-  try {
+  if (url) try {
     const html = await fetchText(url, {
       cacheKey: `mappings.dev:${target.mcVersion}:${cls.mojangName}`,
       ttlMs: 7 * 24 * 60 * 60 * 1000,
@@ -349,13 +466,20 @@ export async function getNmsClass(
     mappingsFallback: target.fallback || undefined,
     warning: target.warning,
     unobfuscatedRuntime: target.unobfuscatedRuntime,
+    source: target.source,
     nextSteps: target.fallback
       ? [
           "Members below may be from a fallback mapping file — not your 26.x bundle",
           "Open this class from paperDevBundle in the IDE and verify each field/method you use",
           "compileJava is the authority",
         ]
-      : ["Prefer Paper API when possible (mc_api_vs_nms)"],
+      : target.source === "server-jar"
+        ? [
+            "Members are read from the official unobfuscated server.jar (vanilla) for this exact version",
+            "Paper-added members are not listed — check paperDevBundle in the IDE if something is missing",
+            "Prefer Paper API when possible (mc_api_vs_nms); compileJava is the authority",
+          ]
+        : ["Prefer Paper API when possible (mc_api_vs_nms)"],
   };
 }
 
@@ -364,7 +488,7 @@ export function mappingsDevClassUrl(mcVersion: string, mojangName: string): stri
 }
 
 export function nmsGuidanceMarkdown(mcVersion?: string): string {
-  const pin = mcVersion ?? "26.2";
+  const pin = mcVersion ?? "26.3";
   const modern = isModernPaperLine(pin);
   return `# NMS / paperweight guidance
 
@@ -384,7 +508,7 @@ Prefer \`mc_resolve_dependency\` with \`nms: true\`. Official userdev: https://d
 
 \`\`\`kotlin
 plugins {
-  id("io.papermc.paperweight.userdev") version "2.0.0-beta.21" // needs Gradle 9+
+  id("io.papermc.paperweight.userdev") version "${FALLBACK_USERDEV_VERSION}" // needs Gradle ${FALLBACK_USERDEV_MIN_GRADLE}+
 }
 dependencies {
   paperweight.paperDevBundle("${modern ? pin + ".build.+" : pin + "-R0.1-SNAPSHOT"}")
@@ -401,14 +525,14 @@ ${
 
 ## Mappings lookup caveat (26.x)
 
-Mojang no longer publishes \`server_mappings\` for calendar 26.1+. \`mc_nms_search\` / \`mc_nms_class\` fall back to **1.21.11** (nearest mapped) with an explicit warning.
+Mojang no longer publishes \`server_mappings\` for calendar 26.1+ — the server jar already carries real names. \`mc_nms_search\` / \`mc_nms_class\` therefore **index the official server.jar for your exact version** (\`source: "server-jar"\`, downloaded once, ~60 MB, cached). Only if that fails do they fall back to **1.21.11** mappings with \`mappingsFallback: true\`.
 
-**Where to look for real members:** after \`mc_resolve_dependency\` \`nms: true\` and Gradle sync, open \`net.minecraft.*\` from the **paperDevBundle** in the IDE (Go to Declaration). No public NMS Javadoc exists. \`compileJava\` confirms.
+The server.jar index is **vanilla**: Paper patches and CraftBukkit add members it does not list. For those, open \`net.minecraft.*\` from the **paperDevBundle** in the IDE (Go to Declaration). No public NMS Javadoc exists. \`compileJava\` confirms.
 
 ## Tools in this SDK
 
 - \`mc_api_vs_nms\` — when API vs NMS (start here)
-- \`mc_nms_search\` / \`mc_nms_class\` — Mojang-mapped lookups (with 26.x fallback)
+- \`mc_nms_search\` / \`mc_nms_class\` — Mojang-named lookups (26.1+: indexed from the official server.jar)
 - \`mc_resolve_dependency\` \`nms: true\` — userdev + paperDevBundle + min Gradle
 - \`mc_build_guidance\` — builds, artifacts, Windows non-ASCII paths
 - \`mc_remapper_guidance\` — remapping / multi-version notes
@@ -435,6 +559,6 @@ export function remapperGuidanceMarkdown(): string {
 - **Pre-26.1**: optional \`reobfJar\` for Spigot-mapped output; Paper prefers Mojang-mapped plugins.
 - Prefer abstraction + Paper API, or NMS adapters per version — not one giant reflective soup.
 - Official docs: https://docs.papermc.io/paper/dev/userdev/
-- paperweight-userdev **2.x** needs **Gradle 9+** (plugin-api 9.0.0). Gradle 8.14 + userdev 2.0.0-beta.21 → variant mismatch.
+- paperweight-userdev **2.x** needs **Gradle 9+**; **2.0.0-beta.24** declares plugin-api **9.7.1** → use Gradle 9.7.1+ (older wrapper → variant mismatch).
 `;
 }

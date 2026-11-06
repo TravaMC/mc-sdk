@@ -20,12 +20,12 @@ Full tree: **`mc_scaffold_project`**. Pre-check: **`mc_validate_build_gradle`**.
 
 ## Version aliases (critical)
 
-Paper calendar line is **`26.2`**, not Minecraft-style **`1.26.2`**.
+Paper calendar line is **`26.3`**, not Minecraft-style **`1.26.3`**.
 
 | User typed | Normalized | Wrong outcome if unaliased |
 |------------|------------|----------------------------|
-| `1.26.2` | `26.2` | JD 404, bogus `1.26.2-R0.1-SNAPSHOT` |
-| `26.2` | `26.2` | OK |
+| `1.26.3` | `26.3` | JD 404, bogus `1.26.3-R0.1-SNAPSHOT` |
+| `26.3` | `26.3` | OK |
 
 `mc_set_version`, lookups, and `mc_resolve_dependency` alias `1.26.x` → `26.x` and emit an explicit **versionWarning**.
 
@@ -37,17 +37,20 @@ Paper calendar line is **`26.2`**, not Minecraft-style **`1.26.2`**.
 |-------------|------------------|-------------------|--------------------------|
 | 1.20.x (pre-5) | 17 | `VERSION-R0.1-SNAPSHOT` | `1.20` |
 | 1.20.5+ / 1.21.x | 21 | `VERSION-R0.1-SNAPSHOT` | `1.21` |
-| **26.x+** | **25** (confirm via Fill) | **`VERSION.build.+`** or exact `26.2.build.N-stable` | **`1.21`** (Bukkit API line for now) |
+| **26.x+** | **25** (confirm via Fill) | **`VERSION.build.+`** or exact `26.3.build.N-stable` | **`26.x`** (e.g. `'26.3'`; docs.papermc.io: valid 1.13 – 26.3) |
+| **Velocity 4.x** | **25** (velocity-api module targets JVM 25) | `com.velocitypowered:velocity-api:4.3.1` | n/a (`@Plugin`) |
+| Velocity 3.5.x / 3.3–3.4 | 21 / 17 | `velocity-api:3.x.y` | n/a |
 
 ### Gradle JVM vs compile JDK (26.x)
 
 | Role | Recommended | Why |
 |------|-------------|-----|
-| **Gradle daemon** (`JAVA_HOME` / IDE Gradle JVM) | **JDK 21** | Gradle 8.14 often misbehaves when the daemon itself runs on JDK 25 |
-| **Compile toolchain** | **JavaLanguageVersion.of(25)** | Paper 26.x bytecode / API requires 25 |
-| **foojay resolver** | in `settings.gradle.kts` | Downloads JDK 25 for compilation while the daemon stays on 21 |
+| **Gradle version** | **9.7.1+** (current 9.9.0) | paperweight-userdev 2.0.0-beta.24 declares Gradle API 9.7.1; Gradle runs on JDK 25 officially since **9.1.0** |
+| **Gradle daemon** (`JAVA_HOME` / IDE Gradle JVM) | JDK 21 or 25 | Gradle 8.x cannot run on JDK 25 — upgrade the wrapper instead of pinning the daemon to 21 |
+| **Compile toolchain** | **JavaLanguageVersion.of(25)** | Paper 26.x / velocity-api 4.x bytecode requires 25 |
+| **foojay resolver** | `foojay-resolver-convention` **1.0.0** in `settings.gradle.kts` | Provisions JDK 25 for the toolchain automatically |
 
-Do **not** assume “set JAVA_HOME=25 and everything works.” Prefer toolchain + foojay.
+Prefer toolchain + foojay over relying on whatever `JAVA_HOME` happens to be.
 
 ---
 
@@ -83,10 +86,10 @@ Only after `mc_api_vs_nms` / API search says the API is insufficient. See [api-v
 ```kotlin
 plugins {
   java
-  id("io.papermc.paperweight.userdev") version "2.0.0-beta.21" // Gradle 9+
+  id("io.papermc.paperweight.userdev") version "2.0.0-beta.24" // Gradle 9.7.1+
 }
 dependencies {
-  paperweight.paperDevBundle("26.2.build.+") // or exact .build.N-beta from resolve
+  paperweight.paperDevBundle("26.3.build.+") // or exact .build.N-stable from resolve
 }
 // 26.1+:
 paperweight.reobfArtifactConfiguration =
@@ -97,7 +100,7 @@ paperweight.reobfArtifactConfiguration =
 | Line | Reobf | Gradle for userdev 2.x |
 |------|-------|-------------------------|
 | 1.21.x | optional `reobfJar` | 8.8+ (1.7.x userdev) or 9+ (2.x) |
-| **26.1+** | **MOJANG_PRODUCTION only** | **9+** |
+| **26.1+** | **MOJANG_PRODUCTION only** | **9.7.1+** with userdev 2.0.0-beta.24 (beta.1–23: 9.0+) |
 
 Docs: https://docs.papermc.io/paper/dev/userdev/ · details in [nms.md](./nms.md)
 
@@ -109,7 +112,7 @@ Docs: https://docs.papermc.io/paper/dev/userdev/ · details in [nms.md](./nms.md
 Expect a long first run (download server, mappings, decompile, patch). Cache lives under Gradle user home / paperweight caches.
 
 ### Mappings tools
-`mc_nms_*` on 26.x fall back to **1.21.11** mappings (no Mojang `server_mappings` for unobfuscated calendar builds) — expect a warning; compile is truth.
+`mc_nms_*` on 26.1+ read class/field/method names from the **official unobfuscated server.jar** of the pinned version (`source: "server-jar"`; Mojang publishes no `server_mappings` there). Paper-added members are not included; only if indexing fails do they fall back to **1.21.11** mappings with `mappingsFallback: true`. Compile is truth.
 
 ---
 

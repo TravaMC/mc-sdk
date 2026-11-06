@@ -1,13 +1,15 @@
 import {
   defaultMinJava,
   defaultUserdevPluginVersion,
-  isModernPaperLine,
   normalizeGameVersion,
   paperApiDependencyNotation,
   paperDevBundleNotation,
   pluginApiVersion,
   purpurApiDependencyNotation,
   requiresMojangProduction,
+  FOOJAY_RESOLVER_VERSION,
+  minGradleForUserdevPlugin,
+  velocityMinJava,
 } from "./versioning.js";
 
 export type TemplateKind =
@@ -44,11 +46,10 @@ export function renderTemplate(
   const pkg = options.packageName ?? "com.example.myplugin";
   const cls = options.className ?? "Example";
   const pluginName = options.pluginName ?? "MyPlugin";
-  const rawVersion = options.version ?? "26.2";
+  const rawVersion = options.version ?? "26.3";
   const version = normalizeGameVersion(rawVersion).version;
   const apiVersion = pluginApiVersion(version);
   const minJava = defaultMinJava(version);
-  const modern = isModernPaperLine(version);
   const paperApiCoord = paperApiDependencyNotation(version);
   const purpurApiCoord = purpurApiDependencyNotation(version);
   const paperDevBundle = paperDevBundleNotation(version);
@@ -162,7 +163,7 @@ public final class ${cls}Items {
     case "paper_build":
       return `// settings.gradle.kts
 plugins {
-    id("org.gradle.toolchains.foojay-resolver-convention") version "0.9.0"
+    id("org.gradle.toolchains.foojay-resolver-convention") version "${FOOJAY_RESOLVER_VERSION}"
 }
 rootProject.name = "${pluginName}"
 
@@ -194,7 +195,7 @@ tasks.processResources {
 }
 
 // Prefer mc_resolve_dependency for exact .build.N-(stable|beta) pins.
-// Gradle JVM tip: run Gradle on JDK 21; toolchain compiles with ${minJava}.
+// Gradle 9.1+ can run on JDK 21 or 25; the toolchain compiles with ${minJava}.
 `;
     case "paperweight_build":
       return `// settings.gradle.kts
@@ -205,13 +206,13 @@ pluginManagement {
     }
 }
 plugins {
-    id("org.gradle.toolchains.foojay-resolver-convention") version "0.9.0"
+    id("org.gradle.toolchains.foojay-resolver-convention") version "${FOOJAY_RESOLVER_VERSION}"
 }
 rootProject.name = "${pluginName}"
 
 // build.gradle.kts — Paper ${version} + paperweight-userdev
 // Prefer mc_resolve_dependency nms=true for exact paperDevBundle pin.
-// userdev ${userdevPlugin} needs Gradle ${mojangProd || modern ? "9+" : "8.8+"}.
+// userdev ${userdevPlugin} needs Gradle ${minGradleForUserdevPlugin(userdevPlugin)}+ (check gradle-wrapper.properties).
 plugins {
     java
     id("io.papermc.paperweight.userdev") version "${userdevPlugin}"
@@ -265,7 +266,7 @@ import org.bukkit.entity.Player;
 /**
  * Isolated NMS helper for Paper ${version}.
  * Prefer Paper API first (mc_api_vs_nms) — e.g. titles/action bars, strikeLightningEffect.
- * Verify members with mc_nms_class (26.x may fall back to 1.21.11 mappings).
+ * Verify members with mc_nms_class (26.1+: indexed from the unobfuscated server.jar) and compileJava.
  */
 public final class ${cls}Nms {
     private ${cls}Nms() {}
@@ -337,7 +338,7 @@ public final class ${cls} {
     case "velocity_build":
       return `plugins { java }
 
-java { toolchain.languageVersion.set(JavaLanguageVersion.of(21)) }
+java { toolchain.languageVersion.set(JavaLanguageVersion.of(${velocityMinJava(version)})) } // velocity-api 4.x → 25, 3.5 → 21, 3.3/3.4 → 17
 
 repositories {
     mavenCentral()
@@ -619,7 +620,7 @@ public final class ${cls}FoliaTasks {
     case "purpur_build":
       return `// settings.gradle.kts
 plugins {
-    id("org.gradle.toolchains.foojay-resolver-convention") version "0.9.0"
+    id("org.gradle.toolchains.foojay-resolver-convention") version "${FOOJAY_RESOLVER_VERSION}"
 }
 rootProject.name = "${pluginName}"
 

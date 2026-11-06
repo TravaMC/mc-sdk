@@ -4,6 +4,8 @@ import {
   defaultMinJava,
   isModernPaperLine,
   normalizeGameVersion,
+  compareGradleVersions,
+  minGradleForUserdevPlugin,
   pluginApiVersion,
   requiresMojangProduction,
 } from "./versioning.js";
@@ -11,6 +13,15 @@ import {
 export interface BuildGradleIssue {
   severity: "error" | "warning";
   message: string;
+}
+
+/** Declared paperweight-userdev plugin version, e.g. 2.0.0-beta.24 */
+export function parseUserdevVersion(buildText: string): string | undefined {
+  return (
+    /io\.papermc\.paperweight\.userdev["']?\s*\)?\s*version\s*\(?\s*["']([^"']+)["']/.exec(
+      buildText
+    )?.[1] ?? undefined
+  );
 }
 
 function usesUserdev2(buildText: string): boolean {
@@ -90,7 +101,7 @@ export async function validateBuildGradle(
     if (/JavaLanguageVersion\.of\(21\)/.test(buildText)) {
       issues.push({
         severity: "warning",
-        message: `26.x line typically needs Java ${defaultMinJava(expected ?? "26.2")} toolchain, not 21`,
+        message: `26.x line typically needs Java ${defaultMinJava(expected ?? "26.3")} toolchain, not 21`,
       });
     }
   }
@@ -131,7 +142,7 @@ export async function validateBuildGradle(
     issues.push({
       severity: "warning",
       message:
-        "Add org.gradle.toolchains.foojay-resolver-convention in settings.gradle.kts so toolchain can download JDK 25 while Gradle runs on 21",
+        "Add org.gradle.toolchains.foojay-resolver-convention (1.0.0) in settings.gradle.kts so Gradle can provision the JDK 25 toolchain automatically",
     });
   }
 
@@ -149,16 +160,28 @@ export async function validateBuildGradle(
   }
 
   if (userdev2) {
+    const userdevVersion = parseUserdevVersion(buildText);
+    const needGradle = userdevVersion ? minGradleForUserdevPlugin(userdevVersion) : "9.0";
     if (!wrapperVersion) {
       issues.push({
         severity: "warning",
-        message:
-          "paperweight-userdev 2.x needs Gradle 9+ — no gradle-wrapper.properties found (or unparseable distributionUrl)",
+        message: `paperweight-userdev ${userdevVersion ?? "2.x"} needs Gradle ${needGradle}+ — no gradle-wrapper.properties found (or unparseable distributionUrl)`,
       });
-    } else if (wrapperVersion.major < 9) {
+    } else if (compareGradleVersions(wrapperVersion.raw, needGradle) < 0) {
       issues.push({
         severity: "error",
-        message: `gradle-wrapper is ${wrapperVersion.raw} but paperweight-userdev 2.x requires Gradle 9+`,
+        message: `gradle-wrapper is ${wrapperVersion.raw} but paperweight-userdev ${userdevVersion ?? "2.x"} requires Gradle ${needGradle}+`,
+      });
+    }
+  }
+
+  // velocity-api 4.x Gradle metadata targets JVM 25 — a lower toolchain fails variant resolution
+  if (/velocity-api:4\./.test(buildText)) {
+    const lang = /JavaLanguageVersion\.of\((\d+)\)/.exec(buildText)?.[1];
+    if (lang && Number.parseInt(lang, 10) < 25) {
+      issues.push({
+        severity: "error",
+        message: `velocity-api 4.x requires Java 25 (toolchain is ${lang}) — set JavaLanguageVersion.of(25)`,
       });
     }
   }
@@ -191,7 +214,7 @@ export async function validateBuildGradle(
     const api = yml.match(/api-version:\s*['"]?([0-9.]+)/)?.[1];
     if (expected && api) {
       const want = pluginApiVersion(expected);
-      if (api !== want && !(want === "1.21" && api.startsWith("1.21"))) {
+      if (api !== want && !api.startsWith(want + ".")) {
         issues.push({
           severity: "warning",
           message: `plugin.yml api-version is '${api}', expected ~'${want}' for ${expected}`,

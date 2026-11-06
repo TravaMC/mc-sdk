@@ -4,10 +4,21 @@ Velocity is a **proxy**. There are no Bukkit worlds, blocks, or living entities.
 
 ## Setup
 
-- Dependency: `com.velocitypowered:velocity-api:VERSION`
-- Annotate the main class with `@Plugin` and/or ship `velocity-plugin.json`
-- Use the JDK version required by your Velocity release
-- Adventure (`Component` / `Audience`) comes with `velocity-api` — **use it for all player-facing text**
+- Dependency: `com.velocitypowered:velocity-api:VERSION` (`compileOnly` + `annotationProcessor`)
+- Annotate the main class with `@Plugin` (the annotation processor generates `velocity-plugin.json`)
+- **Java:** velocity-api **4.x requires Java 25** (its Gradle metadata targets JVM 25 — a Java 21 toolchain fails dependency resolution). 3.5.x → 21, 3.3/3.4 → 17. `mc_resolve_dependency` reads this from Fill.
+- Adventure (`Component` / `Audience`) comes with `velocity-api` — **use it for all player-facing text**. Velocity **4.x ships Adventure 5** (see `mc_adventure_guide`).
+
+### Versions (Nov 2026)
+
+| Version | Status (Fill) | Javadoc on jd.papermc.io |
+|---------|---------------|--------------------------|
+| **4.3.1** | supported, current | not published yet → mc-sdk searches **4.2.1** and adds `javadocWarning` |
+| 4.2.x, 4.1.x, 4.0.0 | older 4.x | 4.2.1, 4.2.0, 4.1.0, 4.0.0 |
+| 3.5.1 | deprecated (EOL 2026-09-30) | — |
+| 3.4.0 | unsupported | 3.4.0 |
+
+`mc_set_version platform=velocity version=4.3.1` pins the real release even though its Javadoc lags; every lookup reports which Javadoc tree was used.
 
 ## Adventure (mandatory for chat / titles / kicks)
 
@@ -43,8 +54,8 @@ These Elytrium libraries run **on Velocity**. Agents often regress to Bungee leg
 
 | URL | Notes |
 |-----|--------|
-| `https://jd.papermc.io/velocity/{version}/` | Versioned (e.g. `3.4.0`, `4.0.0`, `4.1.0`) |
-| `https://jd.papermc.io/velocity/` | Current / latest root docs |
+| `https://jd.papermc.io/velocity/{version}/` | Versioned (e.g. `4.2.1`, `4.1.0`, `3.4.0`) |
+| `https://jd.papermc.io/velocity/` | Redirects to the newest published tree (4.2.1 as of Nov 2026) |
 
 Tools: `mc_velocity_list_versions`, `mc_velocity_search_api`, `mc_velocity_get_class`, `mc_velocity_guide`, `mc_adventure_guide`, `mc_adventure_search`
 
@@ -59,7 +70,7 @@ Tools: `mc_velocity_list_versions`, `mc_velocity_search_api`, `mc_velocity_get_c
 ```
 mc_set_version
   platform: velocity
-  version: 3.4.0   # ask the user — never invent
+  version: 4.3.1   # ask the user — never invent
   versionSource: user_stated
 ```
 
@@ -69,4 +80,4 @@ mc_set_version
 
 ## Example
 
-See `examples/SampleVelocity/` (`/sampleping`, PostLogin tip) — uses Adventure `Component`, not legacy chat.
+See `examples/SampleVelocity/` (`/sampleping`, PostLogin tip) — uses Adventure `Component`, not legacy chat. (The sample targets Velocity 3.4.0 / Java 21; for 4.x bump `velocity-api` and the toolchain to 25.)
