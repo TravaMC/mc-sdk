@@ -74,9 +74,12 @@ export async function validateBuildGradle(
   }
   filesChecked.push(buildFile);
 
-  const expected = options?.expectedVersion
-    ? normalizeGameVersion(options.expectedVersion).version
-    : undefined;
+  const isProxy = options?.platform === "velocity";
+  // A Velocity version (4.3.1) is not a Minecraft line — never feed it to the Paper checks.
+  const expected =
+    options?.expectedVersion && !isProxy
+      ? normalizeGameVersion(options.expectedVersion).version
+      : undefined;
   const modern = expected
     ? isModernPaperLine(expected)
     : /26\.\d|paper-api:26|purpur-api:26|paperDevBundle\("26/.test(buildText);
@@ -205,27 +208,35 @@ export async function validateBuildGradle(
     });
   }
 
-  try {
-    const yml = await readFile(
-      path.join(projectRoot, "src", "main", "resources", "plugin.yml"),
-      "utf8"
-    );
-    filesChecked.push("src/main/resources/plugin.yml");
-    const api = yml.match(/api-version:\s*['"]?([0-9.]+)/)?.[1];
-    if (expected && api) {
-      const want = pluginApiVersion(expected);
-      if (api !== want && !api.startsWith(want + ".")) {
-        issues.push({
-          severity: "warning",
-          message: `plugin.yml api-version is '${api}', expected ~'${want}' for ${expected}`,
-        });
+  // Velocity uses @Plugin / velocity-plugin.json; Paper plugins may ship only paper-plugin.yml.
+  if (!isProxy) {
+    let yml: string | undefined;
+    for (const name of ["plugin.yml", "paper-plugin.yml"]) {
+      try {
+        yml = await readFile(path.join(projectRoot, "src", "main", "resources", name), "utf8");
+        filesChecked.push(`src/main/resources/${name}`);
+        break;
+      } catch {
+        /* next */
       }
     }
-  } catch {
-    issues.push({
-      severity: "warning",
-      message: "plugin.yml not found under src/main/resources/",
-    });
+    if (yml === undefined) {
+      issues.push({
+        severity: "warning",
+        message: "plugin.yml / paper-plugin.yml not found under src/main/resources/",
+      });
+    } else {
+      const api = yml.match(/api-version:\s*['"]?([0-9.]+)/)?.[1];
+      if (expected && api) {
+        const want = pluginApiVersion(expected);
+        if (api !== want && !api.startsWith(want + ".")) {
+          issues.push({
+            severity: "warning",
+            message: `api-version is '${api}', expected ~'${want}' for ${expected}`,
+          });
+        }
+      }
+    }
   }
 
   const ok = !issues.some((i) => i.severity === "error");

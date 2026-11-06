@@ -95,7 +95,8 @@ export function guessMinecraftVersion(paperVersion: string): string {
   return paperVersion.split("-")[0];
 }
 
-function pinnedVersion(config: ProjectConfig): string {
+/** The pinned version for the config's platform (Velocity pins mirror it in velocityVersion). */
+export function pinnedVersion(config: ProjectConfig): string {
   const platform = config.platform ?? "paper";
   return platform === "velocity"
     ? config.velocityVersion ?? config.paperVersion

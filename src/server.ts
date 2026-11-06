@@ -3,7 +3,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import {
   loadProjectConfig,
-  resolveVersion,
+  pinnedVersion,
   saveProjectConfig,
   CONFIG_FILENAME,
   type Platform,
@@ -36,6 +36,7 @@ import {
 } from "./purpur/versions.js";
 import { searchHangar } from "./hangar.js";
 import { isKnownRelease, resolveJavadocPath } from "./javadoc/available.js";
+import { isPinError, resolvePin, type PlatformFamily } from "./pin.js";
 import {
   clearCache,
   getCacheStats,
@@ -93,49 +94,38 @@ function errorText(message: string) {
   };
 }
 
+/** Pin lookup for tool handlers: ResolvedPin, or an MCP error result to return as-is. */
 async function requireVersion(
   projectRoot: string | undefined,
   version?: string,
-  platform?: Platform
+  platform?: Platform,
+  options?: { requireFamily?: PlatformFamily; tool?: string }
 ) {
-  const discovered = await findProjectRoot(projectRoot);
-  const root = discovered?.root;
+  const pin = await resolvePin({
+    projectRoot,
+    version,
+    platform,
+    requireFamily: options?.requireFamily,
+    tool: options?.tool,
+  });
+  if (isPinError(pin)) return errorText(pin.error);
+  return pin;
+}
 
-  if (root) {
-    const config = await loadProjectConfig(root);
-    if (config?.paperVersion || config?.velocityVersion) {
-      const resolved = await resolveVersion(root, undefined, platform);
-      if (resolved.source === "missing" || !resolved.version) {
-        return errorText(ASK_USER_FOR_VERSION);
-      }
-      if (
-        version?.trim() &&
-        normalizeGameVersion(version).version !==
-          normalizeGameVersion(resolved.version).version
-      ) {
-        return errorText(
-          `Project is pinned to ${resolved.platform} ${resolved.version} (${CONFIG_FILENAME} in ${root}). ` +
-            `Do not switch to invented "${version}". If the user wants a different version, ask them, then mc_set_version with versionSource=user_stated.`
-        );
-      }
-      return {
-        version: resolved.version,
-        platform: resolved.platform,
-        config: resolved.config,
-        warning: resolved.warning,
-        projectRoot: root,
-        pinSource: discovered?.source,
-      };
-    }
-  }
-
-  if (version?.trim()) {
-    return errorText(
-      "Do not pass an invented version= without a project pin. " + ASK_USER_FOR_VERSION
-    );
-  }
-
-  return errorText(ASK_USER_FOR_VERSION);
+/** Minecraft-family pin + the Paper Javadoc tree to use for enum/event lookups. */
+async function requirePaperJd(
+  projectRoot: string | undefined,
+  version: string | undefined,
+  tool: string
+) {
+  const v = await requireVersion(projectRoot, version, undefined, {
+    requireFamily: "minecraft",
+    tool,
+  });
+  if ("isError" in v) return v;
+  // Folia/Purpur pins share Paper's version line; their Paper JD may lag a fresh release.
+  const jd = await resolveJavadocPath("paper", v.version);
+  return { ...v, jdVersion: jd.jdVersion, javadocWarning: jd.warning };
 }
 
 const platformEnum = z.enum(["paper", "velocity", "folia", "purpur"]);
@@ -652,15 +642,15 @@ export function createServer(): McpServer {
       listAll: z.boolean().optional(),
     },
     async ({ query, projectRoot, version, limit, listAll }) => {
-      const v = await requireVersion(projectRoot, version);
+      const v = await requirePaperJd(projectRoot, version, "mc_lookup_material");
       if ("isError" in v) return v;
       const target = resolveEnumTarget("material");
       if (listAll && !query) {
-        const all = await listEnumConstants(v.version, target.package, target.className);
+        const all = await listEnumConstants(v.jdVersion, target.package, target.className);
         return text({ version: v.version, type: "Material", count: all.length, values: all });
       }
       const hits = await searchEnumConstants(
-        v.version,
+        v.jdVersion,
         target.package,
         target.className,
         query ?? "",
@@ -686,15 +676,15 @@ export function createServer(): McpServer {
       listAll: z.boolean().optional(),
     },
     async ({ query, projectRoot, version, limit, listAll }) => {
-      const v = await requireVersion(projectRoot, version);
+      const v = await requirePaperJd(projectRoot, version, "mc_lookup_entity");
       if ("isError" in v) return v;
       const target = resolveEnumTarget("entity");
       if (listAll && !query) {
-        const all = await listEnumConstants(v.version, target.package, target.className);
+        const all = await listEnumConstants(v.jdVersion, target.package, target.className);
         return text({ version: v.version, type: "EntityType", count: all.length, values: all });
       }
       const hits = await searchEnumConstants(
-        v.version,
+        v.jdVersion,
         target.package,
         target.className,
         query ?? "",
@@ -734,7 +724,7 @@ export function createServer(): McpServer {
       listAll: z.boolean().optional(),
     },
     async (args) => {
-      const v = await requireVersion(args.projectRoot, args.version);
+      const v = await requirePaperJd(args.projectRoot, args.version, "mc_lookup_enum");
       if ("isError" in v) return v;
       try {
         const target = resolveEnumTarget(
@@ -743,7 +733,7 @@ export function createServer(): McpServer {
           args.className
         );
         if (args.listAll && !args.query) {
-          const all = await listEnumConstants(v.version, target.package, target.className);
+          const all = await listEnumConstants(v.jdVersion, target.package, target.className);
           return text({
             version: v.version,
             type: `${target.package}.${target.className}`,
@@ -753,7 +743,7 @@ export function createServer(): McpServer {
           });
         }
         const hits = await searchEnumConstants(
-          v.version,
+          v.jdVersion,
           target.package,
           target.className,
           args.query ?? "",
@@ -782,11 +772,11 @@ export function createServer(): McpServer {
       listAll: z.boolean().optional(),
     },
     async ({ kind, query, projectRoot, version, limit, listAll }) => {
-      const v = await requireVersion(projectRoot, version);
+      const v = await requirePaperJd(projectRoot, version, "mc_lookup_registry");
       if ("isError" in v) return v;
       const target = resolveEnumTarget(kind);
       if (listAll && !query) {
-        const all = await listEnumConstants(v.version, target.package, target.className);
+        const all = await listEnumConstants(v.jdVersion, target.package, target.className);
         return text({
           version: v.version,
           type: `${target.package}.${target.className}`,
@@ -796,7 +786,7 @@ export function createServer(): McpServer {
         });
       }
       const hits = await searchEnumConstants(
-        v.version,
+        v.jdVersion,
         target.package,
         target.className,
         query ?? "",
@@ -820,13 +810,14 @@ export function createServer(): McpServer {
       limit: z.number().int().min(1).max(40).optional(),
     },
     async ({ scenario, projectRoot, version, limit }) => {
-      const v = await requireVersion(projectRoot, version);
+      const v = await requirePaperJd(projectRoot, version, "mc_find_event");
       if ("isError" in v) return v;
-      const found = await findEventsByScenario(v.version, scenario, limit ?? 15);
+      const found = await findEventsByScenario(v.jdVersion, scenario, limit ?? 15);
       return text({
         ...found,
         version: v.version,
-        versionWarning: v.warning,
+        javadocVersion: v.jdVersion,
+        ...(v.javadocWarning ? { javadocWarning: v.javadocWarning } : {}),
       });
     }
   );
@@ -901,14 +892,8 @@ export function createServer(): McpServer {
       try {
         let adventureMajor: 4 | 5 | undefined = major ? (Number(major) as 4 | 5) : undefined;
         if (!adventureMajor) {
-          const found = await findProjectRoot(projectRoot);
-          const cfg = found ? await loadProjectConfig(found.root) : null;
-          if (cfg) {
-            adventureMajor = adventureMajorFor(
-              cfg.platform,
-              cfg.platform === "velocity" ? cfg.velocityVersion ?? cfg.paperVersion : cfg.paperVersion
-            );
-          }
+          const pin = await resolvePin({ projectRoot });
+          if (!isPinError(pin)) adventureMajor = adventureMajorFor(pin.platform, pin.version);
         }
         return text(await searchAdventure(query, limit ?? 20, { major: adventureMajor }));
       } catch (e) {
@@ -1159,21 +1144,17 @@ export function createServer(): McpServer {
       pluginName: z.string().optional(),
       projectRoot: z
         .string()
-        .describe("Plugin project root with .mc-sdk.json pin"),
+        .optional()
+        .describe("Plugin project root with .mc-sdk.json pin (default: walk up from cwd)"),
       folia: z.boolean().optional(),
       nms: z.boolean().optional(),
     },
     async (args) => {
-      const cfg = await loadProjectConfig(args.projectRoot);
-      if (!cfg?.paperVersion && !cfg?.velocityVersion) {
-        return errorText(ASK_USER_FOR_VERSION);
-      }
-      const version =
-        cfg.platform === "velocity"
-          ? cfg.velocityVersion ?? cfg.paperVersion
-          : cfg.paperVersion;
-      const folia = args.folia ?? cfg.folia;
-      const nms = args.nms ?? cfg.nms;
+      const pin = await requireVersion(args.projectRoot);
+      if ("isError" in pin) return pin;
+      const version = pin.version;
+      const folia = args.folia ?? pin.config.folia;
+      const nms = args.nms ?? pin.config.nms;
       const rendered = renderTemplate(args.kind as TemplateKind, {
         packageName: args.packageName,
         className: args.className,
@@ -1205,7 +1186,10 @@ export function createServer(): McpServer {
         .boolean()
         .optional()
         .describe("If true, resolve paperweight-userdev + paperDevBundle (not paper-api)"),
-      projectRoot: z.string().optional().describe("Use pinned .mc-sdk.json version"),
+      projectRoot: z
+        .string()
+        .optional()
+        .describe("Use pinned .mc-sdk.json version (default: walk up from cwd when no version is given)"),
     },
     async ({
       version,
@@ -1220,18 +1204,19 @@ export function createServer(): McpServer {
         let ver = "";
         let plat: Platform = platform ?? "paper";
         let nms = nmsArg;
-        if (projectRoot) {
-          const cfg = await loadProjectConfig(projectRoot);
-          if (cfg?.paperVersion || cfg?.velocityVersion) {
-            ver =
-              cfg.platform === "velocity"
-                ? cfg.velocityVersion ?? cfg.paperVersion
-                : cfg.paperVersion;
-            plat = platform ?? cfg.platform ?? "paper";
-            if (nms === undefined && cfg.nms) nms = true;
+        // Order: explicit projectRoot pin → user-stated version → pin found from cwd.
+        const userStated = Boolean(version?.trim() && versionSource);
+        if (projectRoot || !userStated) {
+          const pin = await resolvePin({ projectRoot, platform });
+          if (!isPinError(pin)) {
+            ver = pin.version;
+            plat = pin.platform;
+            if (nms === undefined && pin.config.nms) nms = true;
+          } else if (projectRoot) {
+            return errorText(pin.error);
           }
         }
-        if (!ver && version?.trim() && versionSource) {
+        if (!ver && userStated && version) {
           ver = normalizeGameVersion(version).version;
           plat = platform ?? "paper";
         }
@@ -1325,7 +1310,7 @@ export function createServer(): McpServer {
       let plat = platform;
       if (!expected || !plat) {
         const cfg = await loadProjectConfig(projectRoot);
-        expected = expected ?? cfg?.paperVersion;
+        expected = expected ?? (cfg ? pinnedVersion(cfg) : undefined);
         plat = plat ?? cfg?.platform;
       }
       return text(
@@ -1362,11 +1347,11 @@ export function createServer(): McpServer {
       version: z.string().optional(),
     },
     async ({ projectRoot, version }) => {
-      const v =
-        version ??
-        (projectRoot
-          ? (await loadProjectConfig(projectRoot))?.minecraftVersion
-          : undefined);
+      let v = version;
+      if (!v) {
+        const pin = await resolvePin({ projectRoot });
+        if (!isPinError(pin)) v = pin.minecraftVersion;
+      }
       return text(await nmsDocMarkdown(v));
     }
   );
@@ -1383,15 +1368,20 @@ export function createServer(): McpServer {
     "Search Mojang-named NMS classes for the pinned project. 26.1+: indexed from the official unobfuscated server.jar (source=server-jar); ≤1.21.11: Mojang mappings.",
     {
       query: z.string().describe("e.g. ServerPlayer, Abilities, ClientboundPlayerAbilitiesPacket"),
-      projectRoot: z.string().describe("Project root with .mc-sdk.json pin"),
+      projectRoot: z
+        .string()
+        .optional()
+        .describe("Project root with .mc-sdk.json pin (default: walk up from cwd)"),
       limit: z.number().int().min(1).max(50).optional(),
     },
     async ({ query, projectRoot, limit }) => {
       try {
-        const cfg = await loadProjectConfig(projectRoot);
-        const ver = cfg?.minecraftVersion ?? cfg?.paperVersion;
-        if (!ver) return errorText(ASK_USER_FOR_VERSION);
-        return text(await searchNms(ver, query, limit ?? 25));
+        const pin = await requireVersion(projectRoot, undefined, undefined, {
+          requireFamily: "minecraft",
+          tool: "mc_nms_search",
+        });
+        if ("isError" in pin) return pin;
+        return text(await searchNms(pin.minecraftVersion ?? pin.version, query, limit ?? 25));
       } catch (e) {
         return errorText(e instanceof Error ? e.message : String(e));
       }
@@ -1405,14 +1395,32 @@ export function createServer(): McpServer {
       className: z
         .string()
         .describe("Simple or FQCN, e.g. ServerPlayer or net.minecraft.server.level.ServerPlayer"),
-      projectRoot: z.string().describe("Project root with .mc-sdk.json pin"),
+      projectRoot: z
+        .string()
+        .optional()
+        .describe("Project root with .mc-sdk.json pin (default: walk up from cwd)"),
+      memberQuery: z
+        .string()
+        .optional()
+        .describe("Filter members by name/type substring(s), e.g. 'connection' or 'teleport'"),
+      maxMembers: z.number().int().min(10).max(1000).optional().describe("Default 150"),
     },
-    async ({ className, projectRoot }) => {
+    async ({ className, projectRoot, memberQuery, maxMembers }) => {
       try {
-        const cfg = await loadProjectConfig(projectRoot);
-        const ver = cfg?.minecraftVersion ?? cfg?.paperVersion;
-        if (!ver) return errorText(ASK_USER_FOR_VERSION);
-        const result = await getNmsClass(ver, className);
+        const pin = await requireVersion(projectRoot, undefined, undefined, {
+          requireFamily: "minecraft",
+          tool: "mc_nms_class",
+        });
+        if ("isError" in pin) return pin;
+        const result = await getNmsClass(pin.minecraftVersion ?? pin.version, className);
+        const parts = memberQuery?.toLowerCase().split(/[\s|,]+/).filter(Boolean) ?? [];
+        const matched = parts.length
+          ? result.cls.members.filter((m) => {
+              const hay = `${m.mojang} ${m.signature ?? ""}`.toLowerCase();
+              return parts.every((p) => hay.includes(p));
+            })
+          : result.cls.members;
+        const cap = maxMembers ?? 150;
         return text({
           requestedVersion: result.requestedVersion,
           mcVersion: result.mcVersion,
@@ -1423,7 +1431,13 @@ export function createServer(): McpServer {
           obfuscated: result.cls.obfuscated,
           hierarchy: result.cls.hierarchy,
           memberCount: result.cls.members.length,
-          members: result.cls.members.slice(0, 120),
+          ...(parts.length ? { memberQuery, matchedCount: matched.length } : {}),
+          members: matched.slice(0, cap),
+          ...(matched.length > cap
+            ? {
+                truncated: `${matched.length - cap} more — pass memberQuery or raise maxMembers`,
+              }
+            : {}),
           mappingsDevUrl: result.mappingsDevUrl,
           mappingsDevExcerpt: result.mappingsDevExcerpt,
           warning:
