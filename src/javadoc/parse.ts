@@ -97,7 +97,7 @@ export function parseClassHtml(version: string, url: string, html: string): Clas
   const pkgGuess = packageName || hitPackageFromUrl(url);
   const annotation = mergeAnnotations(
     parseDeprecationMeta(signature, deprecationWarning),
-    curatedAnnotation(simpleName, pkgGuess),
+    curatedAnnotation(simpleName, pkgGuess, version),
     /preview|@ApiStatus\.Experimental/i.test(
       cleanText($(".preview, .horizontal").first().text()) + (signature ?? "")
     )
@@ -178,15 +178,17 @@ export function parseClassHtml(version: string, url: string, html: string): Clas
   };
 }
 
-function hitPackageFromUrl(url: string): string | undefined {
+/**
+ * Package from a Javadoc page URL on any host:
+ * jd.papermc.io/{paper|folia|velocity|adventure}/{version}/org/bukkit/Material.html,
+ * purpurmc.org/javadoc/org/purpurmc/…/X.html, jd.advntr.dev/api/4.26.1/net/kyori/…/X.html.
+ */
+export function hitPackageFromUrl(url: string): string | undefined {
   try {
-    const u = new URL(url);
-    const parts = u.pathname.split("/").filter(Boolean);
-    // .../paper/1.21.4/org/bukkit/Material.html
-    const paperIdx = parts.indexOf("paper");
-    if (paperIdx < 0) return undefined;
-    const afterVersion = parts.slice(paperIdx + 2, -1);
-    return afterVersion.join(".") || undefined;
+    const parts = new URL(url).pathname.split("/").filter(Boolean).slice(0, -1);
+    const start = parts.findIndex((p) => /^(org|io|com|net|dev|me|xyz|de|fr|club)$/.test(p));
+    if (start < 0) return undefined;
+    return parts.slice(start).join(".") || undefined;
   } catch {
     return undefined;
   }

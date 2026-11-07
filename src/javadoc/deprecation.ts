@@ -1,6 +1,7 @@
 /**
  * Deprecation / experimental metadata for API types (search + get_class).
  */
+import { compareVersions } from "../util/versionCompare.js";
 
 export interface TypeAnnotation {
   deprecated?: boolean;
@@ -49,18 +50,47 @@ export const CURATED_TYPE_ANNOTATIONS: Record<string, TypeAnnotation> = {
     usageNote:
       "Preferred spawn-location event on Paper (over deprecated PlayerSpawnLocationEvent).",
   },
+  // Paper 26.3 release notes: "PlayerAnimationEvent has been deprecated in favor of PlayerArmSwingEvent"
+  "org.bukkit.event.player.PlayerAnimationEvent": {
+    deprecated: true,
+    since: "26.3",
+    prefer: "PlayerArmSwingEvent",
+    replacement: "io.papermc.paper.event.player.PlayerArmSwingEvent",
+    usageNote: "Since Paper 26.3 listen to PlayerArmSwingEvent (also exists on older Paper).",
+  },
+  PlayerAnimationEvent: {
+    deprecated: true,
+    since: "26.3",
+    prefer: "PlayerArmSwingEvent",
+    replacement: "io.papermc.paper.event.player.PlayerArmSwingEvent",
+    usageNote: "Since Paper 26.3 listen to PlayerArmSwingEvent.",
+  },
 };
 
+/**
+ * Curated notes for a type. With `version`, a deprecation whose `since` is newer than the pin
+ * is dropped (PlayerSpawnLocationEvent is fine on 1.21.1; PlayerAnimationEvent until 26.3).
+ * Purpur / root Javadoc (version "") keeps everything.
+ */
 export function curatedAnnotation(
   name: string,
-  packageName?: string
+  packageName?: string,
+  version?: string
 ): TypeAnnotation | undefined {
-  if (packageName) {
-    const fq = `${packageName}.${name}`;
-    if (CURATED_TYPE_ANNOTATIONS[fq]) return { ...CURATED_TYPE_ANNOTATIONS[fq] };
+  const fq = packageName ? `${packageName}.${name}` : undefined;
+  const raw = (fq && CURATED_TYPE_ANNOTATIONS[fq]) || CURATED_TYPE_ANNOTATIONS[name];
+  if (!raw) return undefined;
+  const ann = { ...raw };
+  if (
+    version &&
+    /^\d/.test(version) &&
+    ann.deprecated &&
+    ann.since &&
+    compareVersions(version, ann.since) < 0
+  ) {
+    return ann.prefer ? undefined : { usageNote: ann.usageNote };
   }
-  if (CURATED_TYPE_ANNOTATIONS[name]) return { ...CURATED_TYPE_ANNOTATIONS[name] };
-  return undefined;
+  return ann;
 }
 
 export function parseDeprecationMeta(

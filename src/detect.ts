@@ -1,6 +1,7 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { stripSnapshotSuffix, type Platform } from "./platform.js";
+import { compareVersions } from "./util/versionCompare.js";
 import { normalizeGameVersion } from "./versioning.js";
 
 export interface DetectedVersion {
@@ -59,6 +60,51 @@ const VERSION_PATTERNS: Array<{
     re: /paper-api[:\s]+["']?([0-9]+(?:\.[0-9]+){1,3}(?:-R0\.1-SNAPSHOT)?)/,
     confidence: "high",
     label: "paper-api coordinate",
+    platform: "paper",
+  },
+  // Gradle version catalogs (gradle/libs.versions.toml): [versions] paper = "26.3.build.244-stable"
+  {
+    re: /module\s*=\s*["']io\.papermc\.paper:paper-api["']\s*,\s*version\s*=\s*["']([^"']+)["']/,
+    confidence: "high",
+    label: "version catalog paper-api",
+    platform: "paper",
+  },
+  {
+    re: /^\s*(?:velocity|velocity-api|velocityApi)\s*=\s*["']([0-9][^"']*)["']/m,
+    confidence: "high",
+    label: "version catalog velocity",
+    platform: "velocity",
+  },
+  {
+    re: /^\s*(?:purpur|purpur-api|purpurApi)\s*=\s*["']([0-9][^"']*)["']/m,
+    confidence: "high",
+    label: "version catalog purpur",
+    platform: "purpur",
+  },
+  {
+    re: /^\s*(?:folia|folia-api|foliaApi)\s*=\s*["']([0-9][^"']*)["']/m,
+    confidence: "high",
+    label: "version catalog folia",
+    platform: "folia",
+  },
+  {
+    re: /^\s*(?:paper|paper-api|paperApi|paperweight-dev-bundle|dev-bundle)\s*=\s*["']([0-9][^"']*)["']/m,
+    confidence: "high",
+    label: "version catalog paper",
+    platform: "paper",
+  },
+  // gradle.properties: paperVersion=26.3.build.244-stable
+  {
+    re: /^\s*(?:paperVersion|paper_version|paper\.version)\s*=\s*([0-9][^\s#]*)/m,
+    confidence: "medium",
+    label: "gradle.properties paperVersion",
+    platform: "paper",
+  },
+  // run-paper: tasks.runServer { minecraftVersion("26.3") }
+  {
+    re: /minecraftVersion\(\s*["']([0-9][^"']*)["']\s*\)/,
+    confidence: "medium",
+    label: "run-paper minecraftVersion",
     platform: "paper",
   },
   {
@@ -141,7 +187,8 @@ export function pickBestDetection(
       conf[a.confidence] - conf[b.confidence] ||
       platformPriority(a.platform) - platformPriority(b.platform) ||
       nmsBoost(a) - nmsBoost(b) ||
-      a.version.localeCompare(b.version)
+      // several modules / branches: the newest version is the likely target
+      compareVersions(b.version, a.version)
     );
   });
   return ranked[0];
@@ -216,7 +263,7 @@ export async function detectVersionFromProject(
     return (
       rank[a.confidence] - rank[b.confidence] ||
       platformPriority(a.platform) - platformPriority(b.platform) ||
-      a.version.localeCompare(b.version)
+      compareVersions(b.version, a.version)
     );
   });
 

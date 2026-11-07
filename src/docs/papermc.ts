@@ -1,5 +1,5 @@
 import { fetchText } from "../cache.js";
-import * as cheerio from "cheerio";
+import { htmlToMarkdown } from "./htmlToMarkdown.js";
 
 const DOCS_BASE = "https://docs.papermc.io";
 
@@ -87,27 +87,62 @@ export function searchDocsCatalog(query: string, limit = 10) {
     .slice(0, limit);
 }
 
+/**
+ * Hosts mc_docs_get may fetch. The tool takes free-form URLs from an agent, so it must not
+ * become a generic fetcher (localhost, intranet, arbitrary sites).
+ */
+export const DOCS_ALLOWED_HOSTS = [
+  "docs.papermc.io",
+  "papermc.io",
+  "jd.papermc.io",
+  "hangar.papermc.io",
+  "purpurmc.org",
+  "jd.advntr.dev",
+  "minecraft.wiki",
+  "github.com",
+];
+
+export function resolveDocsUrl(pathOrUrl: string): string {
+  const raw = pathOrUrl.trim();
+  const url = /^[a-z]+:\/\//i.test(raw)
+    ? raw
+    : `${DOCS_BASE}${raw.startsWith("/") ? "" : "/"}${raw}`;
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error(`Not a valid docs path or URL: ${pathOrUrl}`);
+  }
+  if (parsed.protocol !== "https:") {
+    throw new Error(`Only https documentation URLs are allowed (got ${parsed.protocol})`);
+  }
+  if (!DOCS_ALLOWED_HOSTS.includes(parsed.hostname.toLowerCase())) {
+    throw new Error(
+      `Host ${parsed.hostname} is not an allowed documentation host (${DOCS_ALLOWED_HOSTS.join(", ")}).`
+    );
+  }
+  return parsed.toString();
+}
+
+const DOCS_MAX_CHARS = 30_000;
+
 export async function fetchDocsPage(pathOrUrl: string): Promise<{
   url: string;
   title: string;
   markdown: string;
+  truncated?: boolean;
 }> {
-  const url = pathOrUrl.startsWith("http")
-    ? pathOrUrl
-    : `${DOCS_BASE}${pathOrUrl.startsWith("/") ? "" : "/"}${pathOrUrl}`;
-
+  const url = resolveDocsUrl(pathOrUrl);
   const html = await fetchText(url, {
     cacheKey: `docs:${url}`,
     ttlMs: 12 * 60 * 60 * 1000,
   });
-  const $ = cheerio.load(html);
-  $("script, style, nav, footer, .sidebar").remove();
-  const title = $("h1").first().text().trim() || $("title").text().trim();
-  const main =
-    $("article").text() ||
-    $("main").text() ||
-    $(".content").text() ||
-    $("body").text();
-  const markdown = main.replace(/\s+/g, " ").trim().slice(0, 25000);
-  return { url, title, markdown };
+  const { title, markdown } = htmlToMarkdown(html, url);
+  const truncated = markdown.length > DOCS_MAX_CHARS;
+  return {
+    url,
+    title,
+    markdown: truncated ? markdown.slice(0, DOCS_MAX_CHARS) + "\n\n…(truncated)" : markdown,
+    ...(truncated ? { truncated } : {}),
+  };
 }

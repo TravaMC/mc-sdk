@@ -38,7 +38,7 @@ export interface SearchIndexes {
   packages: PackageIndexEntry[];
 }
 
-interface TypeIndexEntry {
+export interface TypeIndexEntry {
   p?: string;
   l: string;
   k?: string;
@@ -109,7 +109,7 @@ async function loadSearchIndexesUncached(
   };
 }
 
-function typeUrl(
+export function typeUrl(
   version: string,
   entry: TypeIndexEntry,
   platform: Platform
@@ -179,7 +179,7 @@ export async function searchApi(
     for (const t of indexes.types) {
       const score = Math.max(scoreMatch(q, t.l), scoreMatch(q, `${t.p ?? ""}.${t.l}`));
       if (score > 0) {
-        const curated = curatedAnnotation(t.l, t.p);
+        const curated = curatedAnnotation(t.l, t.p, version);
         types.push({
           package: t.p,
           name: t.l,
@@ -275,7 +275,7 @@ export async function searchApi(
   };
 }
 
-function flattenAnnotation(ann?: TypeAnnotation): Partial<TypeHit> {
+export function flattenAnnotation(ann?: TypeAnnotation): Partial<TypeHit> {
   if (!ann || !Object.keys(ann).length) return {};
   return {
     deprecated: ann.deprecated,
@@ -289,7 +289,7 @@ function flattenAnnotation(ann?: TypeAnnotation): Partial<TypeHit> {
   };
 }
 
-function annotationScoreBoost(ann: TypeAnnotation | undefined, pkg?: string): number {
+export function annotationScoreBoost(ann: TypeAnnotation | undefined, pkg?: string): number {
   let boost = 0;
   if (ann?.deprecated) boost -= 120;
   if (ann?.prefer) boost -= 20;
@@ -298,7 +298,8 @@ function annotationScoreBoost(ann: TypeAnnotation | undefined, pkg?: string): nu
   return boost;
 }
 
-async function enrichTypeAnnotations(
+/** Read @Deprecated / experimental blocks from Javadoc pages of Event hits (cached, parallel). */
+export async function enrichTypeAnnotations(
   version: string,
   platform: Platform,
   hits: Array<TypeHit & { score: number }>
@@ -335,7 +336,7 @@ async function enrichTypeAnnotations(
           block.replace(/\s+/g, " ").trim()
         );
         const merged = mergeAnnotations(
-          curatedAnnotation(hit.name, hit.package),
+          curatedAnnotation(hit.name, hit.package, version),
           parsed,
           {
             deprecated: hit.deprecated,

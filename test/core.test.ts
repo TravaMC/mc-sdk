@@ -91,3 +91,95 @@ describe("pin resolution", () => {
     }
   });
 });
+
+describe("events scoring (offline helpers)", () => {
+  it("stems scenario words, expands synonyms and splits event names", async () => {
+    const { stem, scenarioTokens, eventNameWords } = await import("../src/events.js");
+    assert.equal(stem("swings"), "swing");
+    assert.equal(stem("broken"), "break");
+    assert.equal(stem("breaking"), "break");
+    assert.deepEqual(eventNameWords("PlayerArmSwingEvent"), ["player", "arm", "swing"]);
+    assert.deepEqual(eventNameWords("TNTPrimeEvent"), ["tnt", "prime"]);
+    const toks = scenarioTokens("the player hits a zombie");
+    assert.ok(toks.includes("damage"), "hit → damage synonym");
+    assert.ok(!toks.includes("the"));
+  });
+});
+
+describe("curated deprecations are version-gated", () => {
+  it("only flags PlayerSpawnLocationEvent / PlayerAnimationEvent from their since version", async () => {
+    const { curatedAnnotation } = await import("../src/javadoc/deprecation.js");
+    const spigot = "org.spigotmc.event.player";
+    assert.equal(curatedAnnotation("PlayerSpawnLocationEvent", spigot, "1.21.1"), undefined);
+    assert.equal(curatedAnnotation("PlayerSpawnLocationEvent", spigot, "26.3")?.deprecated, true);
+    assert.equal(curatedAnnotation("PlayerAnimationEvent", "org.bukkit.event.player", "26.2"), undefined);
+    assert.equal(
+      curatedAnnotation("PlayerAnimationEvent", "org.bukkit.event.player", "26.3")?.prefer,
+      "PlayerArmSwingEvent"
+    );
+    // Purpur's unversioned JD ("") keeps the note
+    assert.equal(curatedAnnotation("PlayerAnimationEvent", undefined, "")?.deprecated, true);
+  });
+});
+
+describe("docs fetching", () => {
+  it("allows only https documentation hosts", async () => {
+    const { resolveDocsUrl } = await import("../src/docs/papermc.js");
+    assert.equal(resolveDocsUrl("/paper/dev/userdev/"), "https://docs.papermc.io/paper/dev/userdev/");
+    assert.equal(resolveDocsUrl("paper/dev/api/"), "https://docs.papermc.io/paper/dev/api/");
+    assert.throws(() => resolveDocsUrl("http://localhost:8080/"), /https/);
+    assert.throws(() => resolveDocsUrl("https://169.254.169.254/latest"), /not an allowed/);
+    assert.throws(() => resolveDocsUrl("https://evil.example/papermc.io"), /not an allowed/);
+  });
+
+  it("renders headings, code blocks, lists, tables and notes as Markdown", async () => {
+    const { htmlToMarkdown } = await import("../src/docs/htmlToMarkdown.js");
+    const html = `<html><head><title>T</title></head><body><nav>menu</nav><main>
+      <h1>Title<a class="sl-anchor-link" href="#t">Section titled “Title”</a></h1>
+      <p>Use <code>paperweight</code> <a href="/paper/dev/">docs</a>.</p>
+      <pre data-language="kotlin"><code>plugins {
+  java
+}</code></pre>
+      <ul><li>one</li><li>two<ul><li>nested</li></ul></li></ul>
+      <table><tr><th>A</th><th>B</th></tr><tr><td>1</td><td>2</td></tr></table>
+      <aside><p>Note text</p></aside>
+    </main></body></html>`;
+    const { title, markdown } = htmlToMarkdown(html, "https://docs.papermc.io/x/");
+    assert.equal(title, "Title");
+    assert.match(markdown, /^# Title$/m);
+    assert.ok(!markdown.includes("Section titled"));
+    assert.ok(!markdown.includes("menu"));
+    assert.match(markdown, /Use `paperweight` \[docs\]\(https:\/\/docs\.papermc\.io\/paper\/dev\/\)\./);
+    assert.match(markdown, /```kotlin\nplugins \{\n  java\n\}\n```/);
+    assert.match(markdown, /- one\n- two\n  - nested/);
+    assert.match(markdown, /\| A \| B \|\n\| --- \| --- \|\n\| 1 \| 2 \|/);
+    assert.match(markdown, /> Note text/);
+  });
+});
+
+describe("detect: version catalogs and run-paper", () => {
+  it("finds versions in libs.versions.toml and prefers the newest", async () => {
+    const { mkdtemp, mkdir, writeFile, rm } = await import("node:fs/promises");
+    const { tmpdir } = await import("node:os");
+    const path = await import("node:path");
+    const { detectVersionFromProject, pickBestDetection } = await import("../src/detect.js");
+    const root = await mkdtemp(path.join(tmpdir(), "mcsdk-detect-"));
+    try {
+      await mkdir(path.join(root, "gradle"), { recursive: true });
+      await writeFile(
+        path.join(root, "gradle", "libs.versions.toml"),
+        '[versions]\npaper = "26.3.build.244-stable"\n\n[libraries]\npaper-api = { module = "io.papermc.paper:paper-api", version.ref = "paper" }\n'
+      );
+      await writeFile(
+        path.join(root, "build.gradle.kts"),
+        'tasks.runServer { minecraftVersion("26.2") }\n'
+      );
+      const hits = await detectVersionFromProject(root);
+      assert.ok(hits.some((h) => h.version === "26.3" && h.source === "version catalog paper"));
+      assert.ok(hits.some((h) => h.version === "26.2" && h.source === "run-paper minecraftVersion"));
+      assert.equal(pickBestDetection(hits)?.version, "26.3");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+});
