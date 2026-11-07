@@ -1,6 +1,6 @@
 {
   "name": "mc-sdk",
-  "version": "3.2.0",
+  "version": "3.3.0",
   "description": "MCP server for Paper, Folia, Purpur, and Velocity plugin development — versioned Javadocs, docs, NMS mappings, Hangar, templates",
   "license": "MIT",
   "author": "mc-sdk contributors",
@@ -18,15 +18,16 @@
   ],
   "scripts": {
     "build": "tsc",
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
     "start": "node dist/index.js",
     "dev": "tsx src/index.ts",
     "test": "tsx --test test/unit.test.ts test/v32.test.ts test/core.test.ts test/mcp.test.ts",
     "check:docs": "tsx scripts/check-docs-links.ts",
     "smoke": "tsx scripts/smoke.ts",
-    "prepack": "npm run build"
+    "prepack": "npm run clean && npm run build"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=20.18.1"
   },
   "keywords": [
     "mcp",

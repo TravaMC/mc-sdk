@@ -21,7 +21,7 @@ MCP-сервер для разработки плагинов **Paper**, **Folia
 
 ## Требования
 
-- Node.js **18+**
+- Node.js **20.18.1+** (рекомендуется 22 или 24 LTS)
 - Сеть до эндпоинтов Paper / Purpur / Mojang (кэш в `~/.cache/mc-sdk`)
 
 ## Установка (локально / Cursor)
@@ -49,7 +49,7 @@ npm link          # опционально — `mc-sdk` в PATH
 ```
 
 После правок кода: `npm run build`, затем перезапустите MCP (Off→On).  
-Проверка: `mc_cache_stats` → `sdkPackageVersion` (`3.2.0`+).
+Проверка: `mc_cache_stats` → `sdkPackageVersion` (`3.3.0`+).
 
 См. [`mcp.json.example`](mcp.json.example).
 
@@ -73,7 +73,13 @@ npm link          # опционально — `mc-sdk` в PATH
 
 **26.x / World:** для `isFixedTime` / `setTime` используйте `mc_get_class` с `memberQuery` (дефолтный listing обрезает огромные классы). Тексты исключений — `mc_explain_error` / `mc_paper26_guide`.
 
-**События:** в `mc_search_api` / `mc_find_event` смотрите `deprecated`, `prefer`, `warnings[]` (например Spigot `PlayerSpawnLocationEvent` → Paper `AsyncPlayerSpawnLocationEvent`). Фильтр: `deprecated=exclude`.
+**События:** в `mc_search_api` / `mc_find_event` смотрите `deprecated`, `prefer`, `warnings[]` (например Spigot `PlayerSpawnLocationEvent` → Paper `AsyncPlayerSpawnLocationEvent`, с 26.3 `PlayerAnimationEvent` → `PlayerArmSwingEvent`). Пометки учитывают версию пина. `mc_find_event` понимает обычные фразы («player swings arm», «block broken by explosion»). Фильтр: `deprecated=exclude`.
+
+**Пин везде одинаковый:** любой инструмент берёт `.mc-sdk.json` из `projectRoot` или ищет его вверх от рабочей папки MCP. Чужая версия (`version=` не равна пину), переход Paper ↔ Velocity и инструменты Paper на пине Velocity дают понятную ошибку.
+
+**Аннотации MCP:** у каждого инструмента есть `title` и `readOnlyHint` / `openWorldHint` / `destructiveHint`, поэтому клиенты могут сами одобрять инструменты, которые только читают. Пишут на диск только `mc_set_version`, `mc_detect_version` (`pin=true`), `mc_scaffold_project` и `mc_cache_clear`.
+
+**Документация:** `mc_docs_get` отдаёт Markdown (заголовки, блоки кода, таблицы) и открывает только доверенные https-хосты (docs.papermc.io, purpurmc.org, jd.papermc.io, …).
 
 ## Руководства
 

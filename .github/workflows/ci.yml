@@ -10,12 +10,17 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        # Node 20 reached end-of-life in April 2026; cheerio/undici need >= 20.18.1.
+        node-version: ["22", "24"]
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: ${{ matrix.node-version }}
           cache: npm
 
       - name: Install
@@ -24,13 +29,16 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Unit tests
+      - name: Unit + MCP tests
         run: npm test
+
+      - name: Audit (production deps)
+        run: npm audit --omit=dev --audit-level=high
 
       - name: Docs catalog links
         run: npm run check:docs
 
-      - name: Smoke
+      - name: Smoke (live endpoints)
         run: npm run smoke
 
       - name: Pack dry-run
