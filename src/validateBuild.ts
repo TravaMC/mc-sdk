@@ -80,14 +80,20 @@ export async function validateBuildGradle(
     options?.expectedVersion && !isProxy
       ? normalizeGameVersion(options.expectedVersion).version
       : undefined;
-  const modern = expected
-    ? isModernPaperLine(expected)
-    : /26\.\d|paper-api:26|purpur-api:26|paperDevBundle\("26/.test(buildText);
-  const mojangProd = expected
-    ? requiresMojangProduction(expected)
-    : /paperDevBundle\("26\.[1-9]/.test(buildText) ||
-      /MOJANG_PRODUCTION/.test(buildText) ||
-      (modern && /paperweight/.test(buildText));
+  // Without a pin, infer the 26.x line only from Paper/Purpur/Folia coordinates — a bare "26.x"
+  // also matches unrelated deps (org.jetbrains:annotations:26.0.2). Velocity builds never qualify.
+  const modern = isProxy
+    ? false
+    : expected
+      ? isModernPaperLine(expected)
+      : /(paper|purpur|folia)-api:2\d\.|paperDevBundle\(\s*["']2\d\./.test(buildText);
+  const mojangProd = isProxy
+    ? false
+    : expected
+      ? requiresMojangProduction(expected)
+      : /paperDevBundle\(\s*["']26\.[1-9]/.test(buildText) ||
+        /MOJANG_PRODUCTION/.test(buildText) ||
+        (modern && /paperweight/.test(buildText));
 
   if (modern) {
     if (

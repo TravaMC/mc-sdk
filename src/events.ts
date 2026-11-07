@@ -80,27 +80,63 @@ const STOP = new Set([
   "their", "some", "any", "has", "have", "does", "event", "events", "listen", "listener", "want",
 ]);
 
-/** Very small stemmer: swings→swing, breaking→break, broken→break, placed→place, dies→die. */
+const IRREGULAR: Record<string, string> = {
+  broken: "break",
+  broke: "break",
+  died: "die",
+  dies: "die",
+  dying: "die",
+  ate: "eat",
+  fell: "fall",
+  thrown: "throw",
+  threw: "throw",
+  built: "build",
+};
+
+/**
+ * Candidate stems, best first. A suffix strip can lose a silent "e"
+ * (moved/moving → mov), so the "+e" form is offered too: moves→move, moved→[move, mov],
+ * mined→[mine, min], damaged→[damage, damag], jumped→[jump, jumpe], pushes→push.
+ */
+export function stems(word: string): string[] {
+  const w = word.toLowerCase();
+  if (IRREGULAR[w]) return [IRREGULAR[w]];
+  if (w.length > 5 && w.endsWith("ing")) {
+    const base = w.slice(0, -3);
+    return [base, `${base}e`];
+  }
+  if (w.length > 4 && w.endsWith("ed")) {
+    const base = w.slice(0, -2);
+    return [`${base}e`, base];
+  }
+  if (w.length > 4 && /(s|x|z|ch|sh)es$/.test(w)) return [w.slice(0, -2)];
+  if (w.length > 3 && w.endsWith("s") && !w.endsWith("ss")) return [w.slice(0, -1)];
+  return [w];
+}
+
+/** Primary stem (first candidate). */
 export function stem(word: string): string {
-  let w = word.toLowerCase();
-  const irregular: Record<string, string> = { broken: "break", broke: "break", died: "die", dies: "die", dying: "die", ate: "eat", fell: "fall", thrown: "throw" };
-  if (irregular[w]) return irregular[w];
-  if (w.length > 5 && w.endsWith("ing")) w = w.slice(0, -3);
-  else if (w.length > 4 && w.endsWith("ed")) w = w.slice(0, -2);
-  else if (w.length > 4 && w.endsWith("es") && !w.endsWith("ses")) w = w.slice(0, -2);
-  else if (w.length > 3 && w.endsWith("s") && !w.endsWith("ss")) w = w.slice(0, -1);
-  return w;
+  return stems(word)[0];
+}
+
+/** One group per scenario word: its stem candidates + synonyms (a group scores at most once). */
+export function scenarioTokenGroups(scenario: string): string[][] {
+  const groups: string[][] = [];
+  for (const raw of scenario.toLowerCase().split(/[^a-z0-9]+/)) {
+    if (raw.length < 3 || STOP.has(raw)) continue;
+    const g = new Set<string>();
+    for (const s of stems(raw)) {
+      g.add(s);
+      for (const syn of SYNONYMS[s] ?? []) g.add(syn);
+    }
+    for (const syn of SYNONYMS[raw] ?? []) g.add(syn);
+    groups.push([...g]);
+  }
+  return groups;
 }
 
 export function scenarioTokens(scenario: string): string[] {
-  const out = new Set<string>();
-  for (const raw of scenario.toLowerCase().split(/[^a-z0-9]+/)) {
-    if (raw.length < 3 || STOP.has(raw)) continue;
-    const s = stem(raw);
-    out.add(s);
-    for (const syn of SYNONYMS[s] ?? SYNONYMS[raw] ?? []) out.add(syn);
-  }
-  return [...out];
+  return [...new Set(scenarioTokenGroups(scenario).flat())];
 }
 
 /** PlayerArmSwingEvent → ["player","arm","swing"] */
@@ -120,22 +156,28 @@ function sameStem(a: string, b: string): boolean {
 }
 
 function matchesKeyword(scenario: string, keyword: string): boolean {
-  const words = scenario.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean).map(stem);
+  const words = scenario.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean).map(stems);
   const kw = keyword.split(/\s+/).map(stem);
   for (let i = 0; i + kw.length <= words.length; i++) {
-    if (kw.every((k, j) => sameStem(words[i + j], k))) return true;
+    if (kw.every((k, j) => words[i + j].some((w) => sameStem(w, k)))) return true;
   }
   return false;
 }
 
 const GENERIC = new Set(["player", "entity", "block", "item", "async"]);
 
+/**
+ * @param version Javadoc tree to search (may lag the pin, e.g. Folia 26.3 → 26.2 JD)
+ * @param pinVersion pinned version used for version-gated curated deprecations (defaults to `version`)
+ */
 export async function findEventsByScenario(
   version: string,
   scenario: string,
   limit = 15,
-  platform: Platform = "paper"
+  platform: Platform = "paper",
+  pinVersion?: string
 ) {
+  const gateVersion = pinVersion ?? version;
   const hinted: string[] = [];
   for (const row of SCENARIO_HINTS) {
     if (row.keywords.some((k) => matchesKeyword(scenario, k))) {
@@ -143,7 +185,11 @@ export async function findEventsByScenario(
     }
   }
   const tokens = scenarioTokens(scenario);
-  const specific = tokens.filter((t) => !GENERIC.has(t));
+  const groups = scenarioTokenGroups(scenario).map((g) => ({
+    tokens: g,
+    generic: g.every((t) => GENERIC.has(t)),
+  }));
+  const specificGroups = groups.filter((g) => !g.generic).length;
 
   const indexes = await loadSearchIndexes(version, platform);
   const scored: Array<TypeHit & { score: number }> = [];
@@ -152,18 +198,18 @@ export async function findEventsByScenario(
     const words = eventNameWords(t.l);
     let score = 0;
     let specificHits = 0;
-    for (const tok of tokens) {
-      if (words.some((w) => w === tok || (tok.length >= 4 && w.startsWith(tok)))) {
-        score += GENERIC.has(tok) ? 3 : 20;
-        if (!GENERIC.has(tok)) specificHits++;
+    for (const g of groups) {
+      if (g.tokens.some((tok) => words.some((w) => sameStem(w, tok)))) {
+        score += g.generic ? 3 : 20;
+        if (!g.generic) specificHits++;
       }
     }
     const hintRank = hinted.indexOf(t.l);
     if (hintRank >= 0) score += 200 - hintRank * 5;
-    else if (specific.length && specificHits === 0) continue;
+    else if (specificGroups && specificHits === 0) continue;
     if (score <= 0) continue;
     score -= words.length; // prefer the shortest, most direct name
-    const curated = curatedAnnotation(t.l, t.p, version);
+    const curated = curatedAnnotation(t.l, t.p, gateVersion);
     scored.push({
       package: t.p,
       name: t.l,
@@ -181,7 +227,7 @@ export async function findEventsByScenario(
   // Keep our relevance score: enrichment's generic Paper-package boost would reorder matches.
   const relevance = new Map(top.map((h) => [`${h.package}.${h.name}`, h.score]));
   top = [
-    ...(await enrichTypeAnnotations(version, platform, top.slice(0, 8))),
+    ...(await enrichTypeAnnotations(version, platform, top.slice(0, 8), gateVersion)),
     ...top.slice(8),
   ].map((h) => ({ ...h, score: relevance.get(`${h.package}.${h.name}`) ?? h.score }));
   const events = top

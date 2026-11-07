@@ -65,6 +65,22 @@ export function clearSearchIndexMemo(): void {
   indexMemo.clear();
 }
 
+/** Test hook: serve a fixed index for (platform, version) without network or disk. */
+export function primeSearchIndexMemo(
+  version: string,
+  platform: Platform,
+  indexes: SearchIndexes
+): void {
+  indexMemo.set(`${platform}:${version || "root"}`, {
+    at: Date.now(),
+    value: Promise.resolve(indexes),
+  });
+}
+
+export function searchIndexMemoSize(): number {
+  return indexMemo.size;
+}
+
 export async function loadSearchIndexes(
   version: string,
   platform: Platform = "paper"
@@ -156,6 +172,8 @@ export async function searchApi(
     deprecated?: "include" | "exclude" | "only";
     /** Fetch JD deprecation blocks for top Event hits (cached). Default true when query looks event-like. */
     enrichAnnotations?: boolean;
+    /** Pinned version for version-gated curated deprecations when the Javadoc tree lags the pin */
+    annotationVersion?: string;
   }
 ): Promise<{
   types: TypeHit[];
@@ -167,6 +185,7 @@ export async function searchApi(
   const scope = options?.scope ?? "all";
   const platform = options?.platform ?? "paper";
   const deprecatedMode = options?.deprecated ?? "include";
+  const annotationVersion = options?.annotationVersion ?? version;
   const indexes = await loadSearchIndexes(version, platform);
   const q = query.trim();
   if (!q) return { types: [], members: [], packages: [], warnings: [] };
@@ -179,7 +198,7 @@ export async function searchApi(
     for (const t of indexes.types) {
       const score = Math.max(scoreMatch(q, t.l), scoreMatch(q, `${t.p ?? ""}.${t.l}`));
       if (score > 0) {
-        const curated = curatedAnnotation(t.l, t.p, version);
+        const curated = curatedAnnotation(t.l, t.p, annotationVersion);
         types.push({
           package: t.p,
           name: t.l,
@@ -235,7 +254,7 @@ export async function searchApi(
 
   if (shouldEnrich && (scope === "all" || scope === "types")) {
     // Cap + parallel: sequential hung fetches used to freeze the whole MCP for minutes.
-    typed = await enrichTypeAnnotations(version, platform, typed.slice(0, 6));
+    typed = await enrichTypeAnnotations(version, platform, typed.slice(0, 6), annotationVersion);
     typed.sort(
       (a, b) =>
         Number(Boolean(a.deprecated)) - Number(Boolean(b.deprecated)) ||
@@ -302,7 +321,9 @@ export function annotationScoreBoost(ann: TypeAnnotation | undefined, pkg?: stri
 export async function enrichTypeAnnotations(
   version: string,
   platform: Platform,
-  hits: Array<TypeHit & { score: number }>
+  hits: Array<TypeHit & { score: number }>,
+  /** Pinned version for version-gated curated notes (defaults to the Javadoc version) */
+  annotationVersion: string = version
 ): Promise<Array<TypeHit & { score: number }>> {
   return Promise.all(
     hits.map(async (hit) => {
@@ -336,7 +357,7 @@ export async function enrichTypeAnnotations(
           block.replace(/\s+/g, " ").trim()
         );
         const merged = mergeAnnotations(
-          curatedAnnotation(hit.name, hit.package, version),
+          curatedAnnotation(hit.name, hit.package, annotationVersion),
           parsed,
           {
             deprecated: hit.deprecated,

@@ -183,3 +183,102 @@ describe("detect: version catalogs and run-paper", () => {
     }
   });
 });
+
+describe("review regressions (3.3.0)", () => {
+  it("stems verb forms that drop a silent e", async () => {
+    const { stem, stems } = await import("../src/events.js");
+    assert.equal(stem("moves"), "move");
+    assert.ok(stems("moved").includes("move"));
+    assert.ok(stems("moving").includes("move"));
+    assert.ok(stems("mined").includes("mine"));
+    assert.equal(stem("pushes"), "push");
+    assert.equal(stem("swings"), "swing");
+  });
+
+  it("finds events for moves / mined / damaged against a fixed index (offline)", async () => {
+    const { primeSearchIndexMemo, clearSearchIndexMemo } = await import("../src/javadoc/search.js");
+    const { findEventsByScenario } = await import("../src/events.js");
+    const t = (p: string, l: string) => ({ p, l });
+    primeSearchIndexMemo("99.1", "paper", {
+      types: [
+        t("org.bukkit.event.player", "PlayerMoveEvent"),
+        t("org.bukkit.event.block", "BlockBreakEvent"),
+        t("org.bukkit.event.entity", "EntityDamageEvent"),
+        t("org.bukkit.event.entity", "EntityDamageByEntityEvent"),
+        t("org.bukkit.event.player", "PlayerAnimationEvent"),
+        t("io.papermc.paper.event.player", "PlayerArmSwingEvent"),
+        t("org.bukkit.event.world", "ChunkLoadEvent"),
+      ],
+      members: [],
+      packages: [],
+    });
+    try {
+      const names = async (s: string, pin?: string) =>
+        (await findEventsByScenario("99.1", s, 5, "paper", pin)).events.map((e) => e.name);
+      assert.equal((await names("when a player moves"))[0], "PlayerMoveEvent");
+      assert.equal((await names("player moved to another chunk"))[0], "PlayerMoveEvent");
+      assert.equal((await names("block mined by player"))[0], "BlockBreakEvent");
+      assert.equal((await names("entity damaged by another entity"))[0], "EntityDamageEvent");
+      // gating follows the pin, not the (older) Javadoc tree
+      const anim = await findEventsByScenario("99.1", "player animation", 5, "paper", "26.3");
+      const legacy = anim.events.find((e) => e.name === "PlayerAnimationEvent");
+      assert.equal(legacy?.prefer, "PlayerArmSwingEvent");
+      const old = await findEventsByScenario("99.1", "player animation", 5, "paper", "26.2");
+      assert.equal(old.events.find((e) => e.name === "PlayerAnimationEvent")?.deprecated, undefined);
+    } finally {
+      clearSearchIndexMemo();
+    }
+  });
+
+  it("class pages gate curated deprecations by the pin when the JD lags", async () => {
+    const { parseClassHtml } = await import("../src/javadoc/parse.js");
+    const html =
+      '<html><body><h1 class="title">Class PlayerAnimationEvent</h1>' +
+      '<div class="sub-title"><a>org.bukkit.event.player</a></div>' +
+      '<div class="type-signature">public class PlayerAnimationEvent</div></body></html>';
+    const url = "https://jd.papermc.io/folia/26.2/org/bukkit/event/player/PlayerAnimationEvent.html";
+    assert.equal(parseClassHtml("26.2", url, html, "26.3").annotation.prefer, "PlayerArmSwingEvent");
+    assert.equal(parseClassHtml("26.2", url, html).annotation.prefer, undefined);
+  });
+
+  it("does not apply Paper 26.x heuristics to Velocity builds", async () => {
+    const { mkdtemp, writeFile, rm } = await import("node:fs/promises");
+    const { tmpdir } = await import("node:os");
+    const path = await import("node:path");
+    const { validateBuildGradle } = await import("../src/validateBuild.js");
+    const root = await mkdtemp(path.join(tmpdir(), "mcsdk-vel-"));
+    try {
+      await writeFile(
+        path.join(root, "build.gradle.kts"),
+        [
+          "java { toolchain.languageVersion.set(JavaLanguageVersion.of(21)) }",
+          'dependencies { compileOnly("com.velocitypowered:velocity-api:3.4.0")',
+          '  compileOnly("org.jetbrains:annotations:26.0.2") }',
+        ].join("\n")
+      );
+      const r = await validateBuildGradle(root, { platform: "velocity", expectedVersion: "3.4.0" });
+      assert.deepEqual(r.issues, []);
+      // unpinned Paper project with the same jetbrains dep is not "26.x" either
+      const p = await validateBuildGradle(root, {});
+      assert.ok(!p.issues.some((i) => /26\.x|foojay/.test(i.message)));
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("mc_cache_clear also drops in-memory indexes", async () => {
+    const { primeSearchIndexMemo, searchIndexMemoSize } = await import("../src/javadoc/search.js");
+    const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
+    const { InMemoryTransport } = await import("@modelcontextprotocol/sdk/inMemory.js");
+    const { createServer } = await import("../src/server.js");
+    primeSearchIndexMemo("99.2", "paper", { types: [], members: [], packages: [] });
+    assert.ok(searchIndexMemoSize() > 0);
+    const [c, s] = InMemoryTransport.createLinkedPair();
+    await createServer().connect(s);
+    const client = new Client({ name: "t", version: "1" });
+    await client.connect(c);
+    await client.callTool({ name: "mc_cache_clear", arguments: { prefix: "zz-no-such-key-zz" } });
+    assert.equal(searchIndexMemoSize(), 0);
+    await client.close();
+  });
+});

@@ -92,6 +92,7 @@ export function registerApiTools(server: McpServer): void {
         platform: v.platform,
         deprecated,
         enrichAnnotations: true,
+        annotationVersion: v.version,
       });
       const runtimeHints = explainRuntimeError(query, 3);
       const empty =
@@ -145,7 +146,13 @@ export function registerApiTools(server: McpServer): void {
       const v = await requireVersion(args.projectRoot, args.version, args.platform);
       if ("isError" in v) return v;
       const jd = await resolveJavadocPath(v.platform, v.version);
-      const doc = await fetchClassDoc(jd.jdVersion, args.className, args.packageName, v.platform);
+      const doc = await fetchClassDoc(
+        jd.jdVersion,
+        args.className,
+        args.packageName,
+        v.platform,
+        v.version
+      );
       const body = formatClassDoc(doc, {
         includeEnumConstants: args.includeAllEnumConstants,
         maxMethods: args.maxMethods,
@@ -226,7 +233,7 @@ export function registerApiTools(server: McpServer): void {
     async ({ scenario, projectRoot, version, limit }) => {
       const v = await requirePaperJd(projectRoot, version, "mc_find_event");
       if ("isError" in v) return v;
-      const found = await findEventsByScenario(v.jdVersion, scenario, limit ?? 15);
+      const found = await findEventsByScenario(v.jdVersion, scenario, limit ?? 15, "paper", v.version);
       return text({
         ...found,
         version: v.version,

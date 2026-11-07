@@ -41,7 +41,9 @@ export async function fetchClassDoc(
   version: string,
   className: string,
   packageName?: string,
-  platform: Platform = "paper"
+  platform: Platform = "paper",
+  /** Pinned version for version-gated curated deprecations (Javadoc may lag the pin) */
+  annotationVersion?: string
 ): Promise<ClassDoc> {
   const hit = await findType(version, className, packageName, platform);
   if (!hit) {
@@ -55,12 +57,17 @@ export async function fetchClassDoc(
     ttlMs: 24 * 60 * 60 * 1000,
   });
 
-  const doc = parseClassHtml(version, hit.url, html);
+  const doc = parseClassHtml(version, hit.url, html, annotationVersion);
   doc.platform = platform;
   return doc;
 }
 
-export function parseClassHtml(version: string, url: string, html: string): ClassDoc {
+export function parseClassHtml(
+  version: string,
+  url: string,
+  html: string,
+  annotationVersion: string = version
+): ClassDoc {
   const $ = cheerio.load(html);
 
   const title =
@@ -97,7 +104,7 @@ export function parseClassHtml(version: string, url: string, html: string): Clas
   const pkgGuess = packageName || hitPackageFromUrl(url);
   const annotation = mergeAnnotations(
     parseDeprecationMeta(signature, deprecationWarning),
-    curatedAnnotation(simpleName, pkgGuess, version),
+    curatedAnnotation(simpleName, pkgGuess, annotationVersion),
     /preview|@ApiStatus\.Experimental/i.test(
       cleanText($(".preview, .horizontal").first().text()) + (signature ?? "")
     )

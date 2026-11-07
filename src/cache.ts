@@ -27,15 +27,28 @@ let tmpCounter = 0;
 /**
  * Write via temp file + rename so a concurrent reader (another tool call or another MCP
  * process sharing ~/.cache/mc-sdk) never sees a half-written file.
+ * Windows refuses to rename over a file someone has open (EPERM/EBUSY/EACCES): retry once,
+ * then fall back to a plain overwrite — readers treat a torn file as a cache miss anyway.
  */
 async function writeFileAtomic(file: string, data: string): Promise<void> {
   const tmp = `${file}.${process.pid}.${++tmpCounter}.tmp`;
   await writeFile(tmp, data, "utf8");
   try {
     await rename(tmp, file);
+    return;
   } catch (e) {
+    const code = (e as NodeJS.ErrnoException).code;
+    if (code !== "EPERM" && code !== "EBUSY" && code !== "EACCES") {
+      await unlink(tmp).catch(() => undefined);
+      throw e;
+    }
+  }
+  try {
+    await new Promise((r) => setTimeout(r, 50));
+    await rename(tmp, file);
+  } catch {
     await unlink(tmp).catch(() => undefined);
-    throw e;
+    await writeFile(file, data, "utf8");
   }
 }
 
@@ -223,7 +236,7 @@ export async function fetchText(
       const res = await fetch(url, { headers, signal: ac.signal });
 
       if (res.status === 304 && staleValue != null && staleEntry) {
-        await touchCached(cacheKey, staleEntry);
+        await touchCached(cacheKey, staleEntry).catch(() => undefined);
         return staleValue;
       }
 
@@ -232,11 +245,12 @@ export async function fetchText(
       }
 
       const text = await res.text();
+      // A failed cache write must never throw away a successful download.
       await setCached(cacheKey, text, {
         etag: res.headers.get("etag") ?? undefined,
         lastModified: res.headers.get("last-modified") ?? undefined,
         url,
-      });
+      }).catch(() => undefined);
       return text;
     } catch (e) {
       lastError =

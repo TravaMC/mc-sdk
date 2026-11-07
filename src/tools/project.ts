@@ -1,5 +1,7 @@
 /** Project files: templates, Gradle dependency/scaffold/validation, plugin.yml, Hangar, cache. */
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { clearJavadocPathMemo } from "../javadoc/available.js";
+import { clearSearchIndexMemo } from "../javadoc/search.js";
 import { z } from "zod";
 import {
   loadProjectConfig,
@@ -170,7 +172,8 @@ export function registerProjectTools(server: McpServer): void {
             ver = pin.version;
             plat = pin.platform;
             if (nms === undefined && pin.config.nms) nms = true;
-          } else if (projectRoot) {
+          } else if (projectRoot && !userStated) {
+            // No usable pin at the given root and no user-stated version to fall back to.
             return errorText(pin.error);
           }
         }
@@ -336,6 +339,12 @@ export function registerProjectTools(server: McpServer): void {
         .optional()
         .describe("Optional substring, e.g. jd:paper:1.21.1 or fill:paper"),
     },
-    async ({ prefix }) => text(await clearCache({ prefix }))
+    async ({ prefix }) => {
+      const result = await clearCache({ prefix });
+      // Parsed indexes and JD-path decisions live in memory too — drop them so the next lookup refetches.
+      clearSearchIndexMemo();
+      clearJavadocPathMemo();
+      return text(result);
+    }
   );
 }
