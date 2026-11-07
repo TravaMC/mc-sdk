@@ -43,15 +43,25 @@ export function validatePluginYml(content: string): {
     "bootstrapper" in parsed ||
     ("dependencies" in parsed && typeof parsed.dependencies === "object");
 
+  // A manifest missing `main` is still a (broken) plugin.yml — classify by any manifest key so the
+  // missing required fields get reported instead of silently returning "unknown" with no issues.
+  const looksLikeManifest = ["main", "name", "version", "api-version"].some((k) => k in parsed);
   const kind: "plugin.yml" | "paper-plugin.yml" | "unknown" = paperHints
     ? "paper-plugin.yml"
-    : "main" in parsed
+    : looksLikeManifest
       ? "plugin.yml"
       : "unknown";
 
   const issues: YmlIssue[] = [];
+  if (kind === "unknown") {
+    issues.push({
+      level: "error",
+      path: "",
+      message: "Not a plugin manifest: expected plugin.yml (name, version, main) or paper-plugin.yml",
+    });
+  }
 
-  if (kind === "plugin.yml" || (!paperHints && "main" in parsed)) {
+  if (kind === "plugin.yml") {
     for (const key of PLUGIN_YML_REQUIRED) {
       if (parsed[key] == null || parsed[key] === "") {
         issues.push({
@@ -65,7 +75,7 @@ export function validatePluginYml(content: string): {
       issues.push({
         level: "warning",
         path: "api-version",
-        message: "api-version is recommended (e.g. '1.21')",
+        message: "api-version is recommended (e.g. '26.3' on Paper 26.3, '1.21' on 1.21.x) — without it the plugin loads as legacy",
       });
     }
     if (typeof parsed.main === "string" && !parsed.main.includes(".")) {
@@ -111,7 +121,7 @@ required:
   - version: string
   - main: FQCN of JavaPlugin subclass
 recommended:
-  - api-version: "1.21" (or your major.minor)
+  - api-version: "26.3" on 26.x (calendar major.minor), "1.21" on 1.21.x
   - description, authors, website
   - commands: map
   - permissions: map
